@@ -33,6 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $config_content .= "define('DB_PASS', '$pass');\n";
         $config_content .= "define('DB_PREFIX', '$prefix');\n";
         $config_content .= "define('DB_CHARSET', 'utf8mb4');\n";
+        $config_content .= "define('APP_DEBUG', true);\n";
 
         if (!file_put_contents('config.php', $config_content)) {
             throw new Exception("Impossible de créer config.php. Vérifiez les permissions.");
@@ -98,17 +99,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         ");
 
-        // Données d'exemple
+        // Création de l'utilisateur administrateur
+        if (empty($admin_username) || empty($admin_password)) {
+            throw new Exception("Le nom d'utilisateur et le mot de passe administrateur sont requis");
+        }
+
+        $hash = password_hash($admin_password, PASSWORD_DEFAULT);
+        $stmt = $pdo->prepare("INSERT INTO `{$prefix}users` (username, password, role, nom) VALUES (?, ?, 'admin', 'Administrateur')");
+        $stmt->execute([$admin_username, $hash]);
+
+        // Configuration initiale
         $pdo->exec("
-        INSERT INTO `{$prefix}conducteurs` (`nom`, `prenom`, `permis`, `contact`, `experience`, `tournees_maitrisees`, `tournee_titulaire`, `statut_entreprise`, `repos_recurrents`, `conges`) VALUES
-        ('Dupont', 'Jean', 'C', 'jean.dupont@email.fr', 5, '[1]', 1, 'CDI', NULL, NULL),
-        ('Martin', 'Marie', 'C+E', 'marie.martin@email.fr', 8, '[2, 5]', 2, 'CDI', NULL, NULL),
-        ('Durand', 'Pierre', 'C', 'pierre.durand@email.fr', 2, '[3, 4]', NULL, 'CDD', NULL, NULL),
-        ('Bernard', 'Sophie', 'C+E', 'sophie.bernard@email.fr', 10, '[1, 2, 3, 4, 5, 6, 7]', NULL, 'sous-traitant', NULL, NULL),
-        ('Petit', 'Luc', 'C', 'luc.petit@email.fr', 1, '[]', NULL, 'interimaire', NULL, NULL),
-        ('Rousseau', 'Claire', 'C', 'claire.rousseau@email.fr', 4, '[3, 6, 7]', 3, 'CDI', '{\"jours\": [3]}', NULL)
+        INSERT INTO `{$prefix}config` (`cle`, `valeur`) VALUES
+        ('types_permis', '[\"B\",\"C\",\"C+E\",\"D\",\"EC\"]'),
+        ('types_vehicules', '[\"3.5T\",\"7.5T\",\"12T\",\"19T\",\"40T\",\"Porteur\",\"Semi-remorque\"]'),
+        ('poids_titulaire', '100'),
+        ('poids_connaissance', '80'),
+        ('poids_disponibilite', '60'),
+        ('poids_experience', '40'),
+        ('penalite_interimaire', '-50')
+        ON DUPLICATE KEY UPDATE valeur = VALUES(valeur)
         ");
 
+        // Création des tournées d'exemple
         $pdo->exec("
         INSERT INTO `{$prefix}tournees` (`nom`, `description`, `zone_geo`, `type_vehicule`, `difficulte`, `duree`) VALUES
         ('Paris Centre', 'Livraison centre de Paris', 'Paris 75', '12T', 3, 'matin'),
@@ -120,25 +133,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ('Livraison Locale PM', 'Livraisons locales après-midi', 'Local', '3.5T', 1, 'apres-midi')
         ");
 
-        // Création de l'utilisateur administrateur
-        if (empty($admin_username) || empty($admin_password)) {
-            throw new Exception("Le nom d'utilisateur et le mot de passe administrateur sont requis");
-        }
-
-        $hash = password_hash($admin_password, PASSWORD_DEFAULT);
-        $stmt = $pdo->prepare("INSERT INTO `{$prefix}users` (username, password, role, nom) VALUES (?, ?, 'admin', 'Administrateur')");
-        $stmt->execute([$admin_username, $hash]);
-
+        // Création des conducteurs d'exemple
         $pdo->exec("
-        INSERT INTO `{$prefix}config` (`cle`, `valeur`) VALUES
-        ('types_permis', '[\"B\",\"C\",\"C+E\",\"D\",\"EC\"]'),
-        ('types_vehicules', '[\"3.5T\",\"7.5T\",\"12T\",\"19T\",\"40T\",\"Porteur\",\"Semi-remorque\"]'),
-        ('poids_titulaire', '100'),
-        ('poids_connaissance', '80'),
-        ('poids_disponibilite', '60'),
-        ('poids_experience', '40'),
-        ('penalite_interimaire', '-50')
-        ON DUPLICATE KEY UPDATE valeur = VALUES(valeur)
+        INSERT INTO `{$prefix}conducteurs` (`nom`, `prenom`, `permis`, `contact`, `experience`, `tournees_maitrisees`, `tournee_titulaire`, `statut_entreprise`, `repos_recurrents`, `conges`) VALUES
+        ('Dupont', 'Jean', 'C', 'jean.dupont@email.fr', 5, '[1]', 1, 'CDI', NULL, NULL),
+        ('Martin', 'Marie', 'C+E', 'marie.martin@email.fr', 8, '[2, 5]', 2, 'CDI', NULL, NULL),
+        ('Durand', 'Pierre', 'C', 'pierre.durand@email.fr', 2, '[3, 4]', NULL, 'CDD', NULL, NULL),
+        ('Bernard', 'Sophie', 'C+E', 'sophie.bernard@email.fr', 10, '[1, 2, 3, 4, 5, 6, 7]', NULL, 'sous-traitant', NULL, NULL),
+        ('Petit', 'Luc', 'C', 'luc.petit@email.fr', 1, '[]', NULL, 'interimaire', NULL, NULL),
+        ('Rousseau', 'Claire', 'C', 'claire.rousseau@email.fr', 4, '[3, 6, 7]', 3, 'CDI', '{\"jours\": [3]}', NULL)
         ");
 
         $success = "✅ Installation réussie ! Redirection...";

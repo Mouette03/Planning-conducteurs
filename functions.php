@@ -448,15 +448,29 @@ function getScorePerformanceGlobal($dateDebut, $dateFin) {
 function getConfig($cle = null) {
     $pdo = Database::getInstance();
     if ($cle) {
-        $stmt = $pdo->prepare("SELECT valeur FROM " . DB_PREFIX . "config WHERE cle = ?");
+        $stmt = $pdo->prepare("SELECT cle, valeur FROM " . DB_PREFIX . "config WHERE cle = ?");
         $stmt->execute([$cle]);
         $result = $stmt->fetch();
-        return $result ? json_decode($result['valeur'], true) : null;
+        if (!$result) return null;
+        
+        // Si c'est le chemin du logo, on retourne la valeur directement
+        if ($result['cle'] === 'logo_path') {
+            return $result['valeur'];
+        }
+        
+        // Pour les autres clés, on essaie de décoder le JSON
+        $decoded = json_decode($result['valeur'], true);
+        return (json_last_error() === JSON_ERROR_NONE) ? $decoded : $result['valeur'];
     } else {
         $stmt = $pdo->query("SELECT cle, valeur FROM " . DB_PREFIX . "config");
         $config = [];
         foreach ($stmt->fetchAll() as $row) {
-            $config[$row['cle']] = json_decode($row['valeur'], true);
+            if ($row['cle'] === 'logo_path') {
+                $config[$row['cle']] = $row['valeur'];
+            } else {
+                $decoded = json_decode($row['valeur'], true);
+                $config[$row['cle']] = (json_last_error() === JSON_ERROR_NONE) ? $decoded : $row['valeur'];
+            }
         }
         return $config;
     }
@@ -464,10 +478,25 @@ function getConfig($cle = null) {
 
 function setConfig($cle, $valeur) {
     $pdo = Database::getInstance();
+    
+    // Si la clé est logo_path, on stocke directement la valeur sans JSON
+    if ($cle === 'logo_path') {
+        $valeurFinale = $valeur;
+    } else {
+        // Pour les autres clés, on encode en JSON si ce n'est pas déjà du JSON
+        if (is_string($valeur)) {
+            // Tente de décoder pour voir si c'est déjà du JSON
+            json_decode($valeur);
+            $valeurFinale = (json_last_error() === JSON_ERROR_NONE) ? $valeur : json_encode($valeur);
+        } else {
+            $valeurFinale = json_encode($valeur);
+        }
+    }
+    
     $sql = "INSERT INTO " . DB_PREFIX . "config (cle, valeur) VALUES (?, ?)
             ON DUPLICATE KEY UPDATE valeur = VALUES(valeur)";
     $stmt = $pdo->prepare($sql);
-    return $stmt->execute([$cle, json_encode($valeur)]);
+    return $stmt->execute([$cle, $valeurFinale]);
 }
 
 // ==================== STATISTIQUES ====================
