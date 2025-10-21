@@ -16,6 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $user = $_POST['user'] ?? 'root';
     $pass = $_POST['password'] ?? '';
     $prefix = $_POST['prefix'] ?? 'plan_';
+    $admin_username = $_POST['admin_username'] ?? '';
+    $admin_password = $_POST['admin_password'] ?? '';
 
     try {
         $pdo = new PDO("mysql:host=$host;charset=utf8mb4", $user, $pass);
@@ -38,6 +40,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Création des tables
         $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `{$prefix}users` (
+            `id` INT PRIMARY KEY AUTO_INCREMENT,
+            `username` VARCHAR(50) NOT NULL UNIQUE,
+            `password` VARCHAR(255) NOT NULL,
+            `role` ENUM('admin', 'user') NOT NULL DEFAULT 'user',
+            `nom` VARCHAR(100),
+            `email` VARCHAR(255),
+            `date_creation` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `dernier_login` TIMESTAMP NULL,
+            `actif` BOOLEAN DEFAULT TRUE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
         CREATE TABLE IF NOT EXISTS `{$prefix}conducteurs` (
             `id` INT PRIMARY KEY AUTO_INCREMENT,
             `nom` VARCHAR(100) NOT NULL,
@@ -106,6 +120,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ('Livraison Locale PM', 'Livraisons locales après-midi', 'Local', '3.5T', 1, 'apres-midi')
         ");
 
+        // Création de l'utilisateur administrateur
+        if (empty($admin_username) || empty($admin_password)) {
+            throw new Exception("Le nom d'utilisateur et le mot de passe administrateur sont requis");
+        }
+
+        $hash = password_hash($admin_password, PASSWORD_DEFAULT);
+        $stmt = $pdo->prepare("INSERT INTO `{$prefix}users` (username, password, role, nom) VALUES (?, ?, 'admin', 'Administrateur')");
+        $stmt->execute([$admin_username, $hash]);
+
         $pdo->exec("
         INSERT INTO `{$prefix}config` (`cle`, `valeur`) VALUES
         ('types_permis', '[\"B\",\"C\",\"C+E\",\"D\",\"EC\"]'),
@@ -173,6 +196,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div class="mb-3">
                                 <label class="form-label">Préfixe tables</label>
                                 <input type="text" class="form-control" name="prefix" value="plan_" required>
+                            </div>
+                            <hr>
+                            <h4 class="mb-3">Compte administrateur</h4>
+                            <div class="mb-3">
+                                <label class="form-label">Nom d'utilisateur</label>
+                                <input type="text" class="form-control" name="admin_username" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Mot de passe</label>
+                                <input type="password" class="form-control" name="admin_password" required>
                             </div>
                             <button type="submit" class="btn btn-primary w-100 btn-lg">🚀 Installer</button>
                         </form>

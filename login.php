@@ -3,8 +3,6 @@ require_once 'config.php';
 require_once 'database.php';
 require_once 'auth.php';
 
-session_start();
-
 // Si déjà connecté, redirection vers l'accueil
 if (isset($_SESSION['user'])) {
     header('Location: index.php');
