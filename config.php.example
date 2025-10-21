@@ -1,0 +1,10 @@
+<?php
+/**
+ * Fichier de configuration - À renommer en config.php après installation
+ */
+define('DB_HOST', 'localhost');
+define('DB_NAME', 'planning_conducteurs');
+define('DB_USER', 'root');
+define('DB_PASS', '');
+define('DB_PREFIX', 'plan_');
+define('DB_CHARSET', 'utf8mb4');
