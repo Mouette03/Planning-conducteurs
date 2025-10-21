@@ -453,14 +453,24 @@ function getConfig($cle = null) {
         $result = $stmt->fetch();
         if (!$result) return null;
         
-        // Si c'est le chemin du logo, on retourne la valeur directement
-        if ($result['cle'] === 'logo_path') {
+        // Liste des clés qui ne doivent pas être traitées comme JSON
+        $nonJsonKeys = ['logo_path'];
+        
+        if (in_array($result['cle'], $nonJsonKeys)) {
             return $result['valeur'];
         }
         
-        // Pour les autres clés, on essaie de décoder le JSON
-        $decoded = json_decode($result['valeur'], true);
-        return (json_last_error() === JSON_ERROR_NONE) ? $decoded : $result['valeur'];
+        // Pour les autres clés, on essaie de décoder le JSON de manière sécurisée
+        try {
+            if (empty($result['valeur'])) {
+                return null;
+            }
+            $decoded = json_decode($result['valeur'], true, 512, JSON_THROW_ON_ERROR);
+            return $decoded;
+        } catch (Exception $e) {
+            error_log("Erreur décodage JSON pour la clé {$result['cle']}: " . $e->getMessage());
+            return $result['valeur'];
+        }
     } else {
         $stmt = $pdo->query("SELECT cle, valeur FROM " . DB_PREFIX . "config");
         $config = [];
@@ -468,8 +478,17 @@ function getConfig($cle = null) {
             if ($row['cle'] === 'logo_path') {
                 $config[$row['cle']] = $row['valeur'];
             } else {
-                $decoded = json_decode($row['valeur'], true);
-                $config[$row['cle']] = (json_last_error() === JSON_ERROR_NONE) ? $decoded : $row['valeur'];
+                try {
+                    if (!empty($row['valeur'])) {
+                        $decoded = json_decode($row['valeur'], true, 512, JSON_THROW_ON_ERROR);
+                        $config[$row['cle']] = $decoded;
+                    } else {
+                        $config[$row['cle']] = null;
+                    }
+                } catch (Exception $e) {
+                    error_log("Erreur décodage JSON pour la clé {$row['cle']}: " . $e->getMessage());
+                    $config[$row['cle']] = $row['valeur'];
+                }
             }
         }
         return $config;
@@ -479,17 +498,31 @@ function getConfig($cle = null) {
 function setConfig($cle, $valeur) {
     $pdo = Database::getInstance();
     
-    // Si la clé est logo_path, on stocke directement la valeur sans JSON
-    if ($cle === 'logo_path') {
+    // Liste des clés qui ne doivent pas être traitées comme JSON
+    $nonJsonKeys = ['logo_path'];
+    
+    if (in_array($cle, $nonJsonKeys)) {
         $valeurFinale = $valeur;
     } else {
-        // Pour les autres clés, on encode en JSON si ce n'est pas déjà du JSON
-        if (is_string($valeur)) {
-            // Tente de décoder pour voir si c'est déjà du JSON
-            json_decode($valeur);
-            $valeurFinale = (json_last_error() === JSON_ERROR_NONE) ? $valeur : json_encode($valeur);
-        } else {
-            $valeurFinale = json_encode($valeur);
+        try {
+            if (is_string($valeur)) {
+                // Vérifie si c'est déjà du JSON valide
+                json_decode($valeur, true, 512, JSON_THROW_ON_ERROR);
+                $valeurFinale = $valeur;
+            } else {
+                // Encode en JSON avec gestion des caractères UTF-8
+                $valeurFinale = json_encode($valeur, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+                if ($valeurFinale === false) {
+                    throw new Exception("Erreur d'encodage JSON");
+                }
+            }
+        } catch (Exception $e) {
+            error_log("Erreur setConfig pour la clé $cle: " . $e->getMessage());
+            if (is_string($valeur)) {
+                $valeurFinale = $valeur;
+            } else {
+                $valeurFinale = json_encode($valeur, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
         }
     }
     

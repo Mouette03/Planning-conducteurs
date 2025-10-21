@@ -108,18 +108,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $pdo->prepare("INSERT INTO `{$prefix}users` (username, password, role, nom) VALUES (?, ?, 'admin', 'Administrateur')");
         $stmt->execute([$admin_username, $hash]);
 
-        // Configuration initiale
-        $pdo->exec("
-        INSERT INTO `{$prefix}config` (`cle`, `valeur`) VALUES
-        ('types_permis', '[\"B\",\"C\",\"C+E\",\"D\",\"EC\"]'),
-        ('types_vehicules', '[\"3.5T\",\"7.5T\",\"12T\",\"19T\",\"40T\",\"Porteur\",\"Semi-remorque\"]'),
-        ('poids_titulaire', '100'),
-        ('poids_connaissance', '80'),
-        ('poids_disponibilite', '60'),
-        ('poids_experience', '40'),
-        ('penalite_interimaire', '-50')
-        ON DUPLICATE KEY UPDATE valeur = VALUES(valeur)
-        ");
+        // Configuration initiale avec données JSON correctement encodées
+        $configInitiale = [
+            'types_permis' => json_encode(["B","C","C+E","D","EC"], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'types_vehicules' => json_encode(["3.5T","7.5T","12T","19T","40T","Porteur","Semi-remorque"], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'poids_titulaire' => '100',
+            'poids_connaissance' => '80',
+            'poids_disponibilite' => '60',
+            'poids_experience' => '40',
+            'penalite_interimaire' => '-50'
+        ];
+        
+        $stmt = $pdo->prepare("INSERT INTO `{$prefix}config` (`cle`, `valeur`) VALUES (?, ?) ON DUPLICATE KEY UPDATE valeur = VALUES(valeur)");
+        foreach ($configInitiale as $cle => $valeur) {
+            $stmt->execute([$cle, $valeur]);
+        }
 
         // Création des tournées d'exemple
         $pdo->exec("
