@@ -4,3 +4,113 @@
 [2025-10-21 21:07:02] [ERROR] ERREUR: config.php manquant 
 [2025-10-21 21:08:05] [INFO] Nouvelle requête API {"action":"get_config","method":"GET","ip":"127.0.0.1"}
 [2025-10-21 21:08:05] [ERROR] ERREUR: config.php manquant 
+[2025-10-21 23:41:31] [INFO] Nouvelle requête API {"action":"get_config","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:41:31] [INFO] Nouvelle requête API {"action":"get_stats","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:41:31] [DEBUG] Input data: [] 
+[2025-10-21 23:41:31] [DEBUG] Input data: [] 
+[2025-10-21 23:41:31] [INFO] Nouvelle requête API {"action":"get_score_global","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:41:31] [DEBUG] Input data: [] 
+[2025-10-21 23:41:32] [INFO] Nouvelle requête API {"action":"get_conducteurs","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:41:32] [INFO] Nouvelle requête API {"action":"get_tournees","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:41:32] [DEBUG] Input data: [] 
+[2025-10-21 23:41:32] [DEBUG] Input data: [] 
+[2025-10-21 23:41:32] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:41:32] [DEBUG] Input data: [] 
+[2025-10-21 23:41:32] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:41:32] [DEBUG] Input data: [] 
+[2025-10-21 23:41:32] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:41:32] [DEBUG] Input data: [] 
+[2025-10-21 23:41:32] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:41:32] [DEBUG] Input data: [] 
+[2025-10-21 23:41:32] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:41:32] [DEBUG] Input data: [] 
+[2025-10-21 23:41:32] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:41:32] [DEBUG] Input data: [] 
+[2025-10-21 23:44:45] [INFO] Nouvelle requête API {"action":"get_stats","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:44:45] [INFO] Nouvelle requête API {"action":"get_conducteurs","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:44:45] [DEBUG] Input data: [] 
+[2025-10-21 23:44:45] [DEBUG] Input data: [] 
+[2025-10-21 23:44:45] [INFO] Nouvelle requête API {"action":"get_score_global","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:44:45] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:44:45] [DEBUG] Input data: [] 
+[2025-10-21 23:44:45] [DEBUG] Input data: [] 
+[2025-10-21 23:44:46] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:44:46] [DEBUG] Input data: [] 
+[2025-10-21 23:44:46] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:44:46] [DEBUG] Input data: [] 
+[2025-10-21 23:44:46] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:44:46] [DEBUG] Input data: [] 
+[2025-10-21 23:44:46] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:44:46] [DEBUG] Input data: [] 
+[2025-10-21 23:44:46] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:44:46] [DEBUG] Input data: [] 
+[2025-10-21 23:44:46] [INFO] Nouvelle requête API {"action":"get_tournees","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:44:46] [INFO] Nouvelle requête API {"action":"get_config","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:44:46] [DEBUG] Input data: [] 
+[2025-10-21 23:44:46] [DEBUG] Input data: [] 
+[2025-10-21 23:53:12] [INFO] Nouvelle requête API {"action":"get_conducteurs","method":"GET","ip":"2a01:e0a:1c0:ca40:20d1:def2:754c:b12c"}
+[2025-10-21 23:53:12] [DEBUG] Input data: [] 
+[2025-10-21 23:53:12] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:20d1:def2:754c:b12c"}
+[2025-10-21 23:53:12] [DEBUG] Input data: [] 
+[2025-10-21 23:53:12] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:20d1:def2:754c:b12c"}
+[2025-10-21 23:53:12] [DEBUG] Input data: [] 
+[2025-10-21 23:53:12] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:20d1:def2:754c:b12c"}
+[2025-10-21 23:53:12] [DEBUG] Input data: [] 
+[2025-10-21 23:53:12] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:20d1:def2:754c:b12c"}
+[2025-10-21 23:53:12] [DEBUG] Input data: [] 
+[2025-10-21 23:53:12] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:20d1:def2:754c:b12c"}
+[2025-10-21 23:53:12] [DEBUG] Input data: [] 
+[2025-10-21 23:53:12] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:20d1:def2:754c:b12c"}
+[2025-10-21 23:53:12] [DEBUG] Input data: [] 
+[2025-10-21 23:53:13] [INFO] Nouvelle requête API {"action":"get_config","method":"GET","ip":"2a01:e0a:1c0:ca40:20d1:def2:754c:b12c"}
+[2025-10-21 23:53:13] [DEBUG] Input data: [] 
+[2025-10-21 23:53:13] [INFO] Nouvelle requête API {"action":"get_tournees","method":"GET","ip":"2a01:e0a:1c0:ca40:20d1:def2:754c:b12c"}
+[2025-10-21 23:53:13] [INFO] Nouvelle requête API {"action":"get_stats","method":"GET","ip":"2a01:e0a:1c0:ca40:20d1:def2:754c:b12c"}
+[2025-10-21 23:53:13] [DEBUG] Input data: [] 
+[2025-10-21 23:53:13] [DEBUG] Input data: [] 
+[2025-10-21 23:53:13] [INFO] Nouvelle requête API {"action":"get_score_global","method":"GET","ip":"2a01:e0a:1c0:ca40:20d1:def2:754c:b12c"}
+[2025-10-21 23:53:13] [DEBUG] Input data: [] 
+[2025-10-21 23:55:10] [INFO] Nouvelle requête API {"action":"get_stats","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:10] [DEBUG] Input data: [] 
+[2025-10-21 23:55:10] [INFO] Nouvelle requête API {"action":"get_config","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:10] [INFO] Nouvelle requête API {"action":"get_conducteurs","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:10] [DEBUG] Input data: [] 
+[2025-10-21 23:55:10] [DEBUG] Input data: [] 
+[2025-10-21 23:55:10] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:10] [DEBUG] Input data: [] 
+[2025-10-21 23:55:10] [INFO] Nouvelle requête API {"action":"get_score_global","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:10] [DEBUG] Input data: [] 
+[2025-10-21 23:55:10] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:10] [DEBUG] Input data: [] 
+[2025-10-21 23:55:10] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:10] [DEBUG] Input data: [] 
+[2025-10-21 23:55:10] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:10] [DEBUG] Input data: [] 
+[2025-10-21 23:55:10] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:10] [DEBUG] Input data: [] 
+[2025-10-21 23:55:10] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:10] [DEBUG] Input data: [] 
+[2025-10-21 23:55:11] [INFO] Nouvelle requête API {"action":"get_tournees","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:11] [DEBUG] Input data: [] 
+[2025-10-21 23:55:11] [INFO] Nouvelle requête API {"action":"get_conducteurs","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:11] [INFO] Nouvelle requête API {"action":"get_stats","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:11] [INFO] Nouvelle requête API {"action":"get_tournees","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:11] [DEBUG] Input data: [] 
+[2025-10-21 23:55:11] [DEBUG] Input data: [] 
+[2025-10-21 23:55:11] [DEBUG] Input data: [] 
+[2025-10-21 23:55:11] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:11] [DEBUG] Input data: [] 
+[2025-10-21 23:55:11] [INFO] Nouvelle requête API {"action":"get_score_global","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:11] [DEBUG] Input data: [] 
+[2025-10-21 23:55:11] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:11] [DEBUG] Input data: [] 
+[2025-10-21 23:55:11] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:11] [DEBUG] Input data: [] 
+[2025-10-21 23:55:11] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:11] [DEBUG] Input data: [] 
+[2025-10-21 23:55:12] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:12] [DEBUG] Input data: [] 
+[2025-10-21 23:55:12] [INFO] Nouvelle requête API {"action":"get_performance","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:12] [DEBUG] Input data: [] 
+[2025-10-21 23:55:12] [INFO] Nouvelle requête API {"action":"get_config","method":"GET","ip":"2a01:e0a:1c0:ca40:6d3f:7378:94a4:59a9"}
+[2025-10-21 23:55:12] [DEBUG] Input data: [] 
