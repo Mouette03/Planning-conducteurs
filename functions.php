@@ -4,6 +4,14 @@
  */
 
 function jsonResponse($data, $statusCode = 200) {
+    // If any accidental output was produced, capture it and log for debugging
+    if (ob_get_level() > 0) {
+        $buf = ob_get_clean();
+        if (!empty($buf)) {
+            error_log("Buffered output before JSON response: " . $buf);
+        }
+    }
+
     http_response_code($statusCode);
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_NUMERIC_CHECK);
     exit;

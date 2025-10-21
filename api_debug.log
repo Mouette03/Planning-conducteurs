@@ -1,0 +1,6 @@
+[2025-10-21 21:04:06] [INFO] Nouvelle requête API {"action":"get_config","method":"GET","ip":null}
+[2025-10-21 21:04:06] [ERROR] ERREUR: config.php manquant 
+[2025-10-21 21:07:02] [INFO] Nouvelle requête API {"action":"get_config","method":"GET","ip":"127.0.0.1"}
+[2025-10-21 21:07:02] [ERROR] ERREUR: config.php manquant 
+[2025-10-21 21:08:05] [INFO] Nouvelle requête API {"action":"get_config","method":"GET","ip":"127.0.0.1"}
+[2025-10-21 21:08:05] [ERROR] ERREUR: config.php manquant 

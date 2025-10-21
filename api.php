@@ -11,6 +11,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+// Bufferiser toute sortie accidentelle pour éviter de corrompre les réponses JSON
+if (ob_get_level() === 0) ob_start();
+
 // Configuration du log d'API
 class APILogger {
     private static $instance = null;
@@ -33,7 +36,7 @@ class APILogger {
     }
     
     public function log($level, $message, $context = []) {
-        if (!APP_DEBUG && $level === 'DEBUG') return;
+        if ((!defined('APP_DEBUG') || !APP_DEBUG) && $level === 'DEBUG') return;
         
         $log = sprintf(
             "[%s] [%s] %s %s\n",
@@ -50,13 +53,13 @@ class APILogger {
 $logger = APILogger::getInstance();
 $logger->log('INFO', 'Nouvelle requête API', [
     'action' => $_GET['action'] ?? 'none',
-    'method' => $_SERVER['REQUEST_METHOD'],
-    'ip' => $_SERVER['REMOTE_ADDR']
+    'method' => $_SERVER['REQUEST_METHOD'] ?? 'CLI',
+    'ip' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'
 ]);
 
 // Vérifier config
 if (!file_exists('config.php')) {
-    debugLog("ERREUR: config.php manquant");
+    $logger->log('ERROR', "ERREUR: config.php manquant");
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => 'Configuration manquante']);
     exit;
@@ -67,14 +70,14 @@ try {
     require_once 'database.php';
     require_once 'functions.php';
 } catch (Exception $e) {
-    debugLog("ERREUR require: " . $e->getMessage());
+    $logger->log('ERROR', "ERREUR require: " . $e->getMessage());
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => 'Erreur chargement: ' . $e->getMessage()]);
     exit;
 }
 
 $action = $_GET['action'] ?? '';
-$method = $_SERVER['REQUEST_METHOD'];
+$method = $_SERVER['REQUEST_METHOD'] ?? 'CLI';
 
 // Récupérer les données POST/PUT
 $rawInput = file_get_contents('php://input');
@@ -84,11 +87,11 @@ if ($rawInput) {
     if (json_last_error() === JSON_ERROR_NONE) {
         $input = $decoded;
     } else {
-        debugLog("ERREUR JSON decode: " . json_last_error_msg());
+        $logger->log('ERROR', "ERREUR JSON decode: " . json_last_error_msg());
     }
 }
 
-debugLog("Input data: " . json_encode($input));
+$logger->log('DEBUG', "Input data: " . json_encode($input));
 
 try {
     switch ($action) {
@@ -157,13 +160,13 @@ try {
         case 'get_planning':
             $debut = $_GET['debut'] ?? date('Y-m-d');
             $fin = $_GET['fin'] ?? date('Y-m-d');
-            debugLog("get_planning: debut=$debut, fin=$fin");
+            $logger->log('DEBUG', "get_planning: debut=$debut, fin=$fin");
             $data = getPlanning($debut, $fin);
             jsonResponse(['success' => true, 'data' => $data]);
             break;
             
         case 'add_attribution':
-            debugLog("add_attribution input: " . json_encode($input));
+            $logger->log('DEBUG', "add_attribution input: " . json_encode($input));
             
             // Validation stricte
             if (!isset($input['date'])) {
@@ -178,7 +181,7 @@ try {
             
             // Appel de la fonction
             $result = addAttribution($input);
-            debugLog("add_attribution result: " . ($result ? 'success' : 'failed'));
+            $logger->log('DEBUG', "add_attribution result: " . ($result ? 'success' : 'failed'));
             
             jsonResponse([
                 'success' => true, 
@@ -203,14 +206,14 @@ try {
             $date = $_GET['date'] ?? date('Y-m-d');
             $periode = $_GET['periode'] ?? 'matin';
             
-            debugLog("calculer_score: c=$conducteurId, t=$tourneeId, d=$date, p=$periode");
+            $logger->log('DEBUG', "calculer_score: c=$conducteurId, t=$tourneeId, d=$date, p=$periode");
             
             if (!$conducteurId || !$tourneeId) {
                 throw new Exception('Paramètres manquants pour calculer_score');
             }
             
             $score = calculerScoreConducteur($conducteurId, $tourneeId, $date, $periode);
-            debugLog("Score calculé: " . json_encode($score));
+            $logger->log('DEBUG', "Score calculé: " . json_encode($score));
             
             jsonResponse(['success' => true, 'data' => $score]);
             break;
@@ -232,7 +235,7 @@ try {
         case 'remplir_auto':
             $debut = $input['debut'] ?? $_GET['debut'] ?? date('Y-m-d');
             $fin = $input['fin'] ?? $_GET['fin'] ?? date('Y-m-d');
-            debugLog("remplir_auto: debut=$debut, fin=$fin");
+            $logger->log('DEBUG', "remplir_auto: debut=$debut, fin=$fin");
             $res = remplirPlanningAuto($debut, $fin);
             jsonResponse(['success' => true, 'data' => $res]);
             break;
@@ -260,13 +263,13 @@ try {
             
         // ========== ACTION INCONNUE ==========
         default:
-            debugLog("Action inconnue: $action");
+            $logger->log('WARNING', "Action inconnue: $action");
             jsonResponse(['success' => false, 'error' => "Action '$action' inconnue"], 404);
     }
     
 } catch (Exception $e) {
-    debugLog("EXCEPTION: " . $e->getMessage());
-    debugLog("Trace: " . $e->getTraceAsString());
+    $logger->log('ERROR', "EXCEPTION: " . $e->getMessage());
+    $logger->log('ERROR', "Trace: " . $e->getTraceAsString());
     
     jsonResponse([
         'success' => false,
