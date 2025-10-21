@@ -5,6 +5,13 @@ if (!file_exists('config.php')) {
     exit;
 }
 require_once 'config.php';
+require_once 'auth.php';
+
+// Vérification de l'authentification
+verifierAuthentification();
+
+// Récupération des informations utilisateur
+$user = $_SESSION['user'];
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -23,9 +30,29 @@ require_once 'config.php';
             <a class="navbar-brand fw-bold" href="#">
                 <i class="bi bi-truck me-2"></i>Planning Conducteur Pro
             </a>
-            <span class="navbar-text text-white">
-                <i class="bi bi-calendar-check me-2"></i><?php echo date('d/m/Y'); ?>
-            </span>
+            <div class="d-flex align-items-center">
+                <?php if ($logoPath = getConfig('logo_path')): ?>
+                <img src="<?php echo htmlspecialchars($logoPath); ?>" alt="Logo" class="navbar-logo me-3" 
+                     style="max-height: 40px; width: auto;">
+                <?php endif; ?>
+                <span class="navbar-text text-white me-3">
+                    <i class="bi bi-calendar-check me-2"></i><?php echo date('d/m/Y'); ?>
+                </span>
+                <div class="dropdown">
+                    <button class="btn btn-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-person-circle me-2"></i><?php echo htmlspecialchars($user['username']); ?>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="#" onclick="afficherModalProfil()">
+                            <i class="bi bi-person me-2"></i>Mon profil
+                        </a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-danger" href="logout.php">
+                            <i class="bi bi-box-arrow-right me-2"></i>Déconnexion
+                        </a></li>
+                    </ul>
+                </div>
+            </div>
         </div>
     </nav>
 
@@ -52,11 +79,18 @@ require_once 'config.php';
                     <i class="bi bi-calendar3 me-2"></i>Planning
                 </button>
             </li>
+            <?php if ($user['role'] === 'admin'): ?>
             <li class="nav-item">
                 <button class="nav-link" id="parametres-tab" data-bs-toggle="tab" data-bs-target="#parametres" type="button">
                     <i class="bi bi-gear me-2"></i>Paramètres
                 </button>
             </li>
+            <li class="nav-item">
+                <button class="nav-link" id="utilisateurs-tab" data-bs-toggle="tab" data-bs-target="#utilisateurs" type="button">
+                    <i class="bi bi-people me-2"></i>Utilisateurs
+                </button>
+            </li>
+            <?php endif; ?>
         </ul>
 
         <div class="tab-content" id="mainTabsContent">
@@ -138,12 +172,17 @@ require_once 'config.php';
                                     <input type="date" id="planning-date-debut" class="form-control form-control-sm">
                                     <span class="text-white">au</span>
                                     <input type="date" id="planning-date-fin" class="form-control form-control-sm">
-                                    <button class="btn btn-light btn-sm" onclick="chargerPlanning()">
-                                        <i class="bi bi-arrow-clockwise"></i>
-                                    </button>
-                                    <button class="btn btn-warning btn-sm" onclick="remplirPlanningAuto()">
-                                        <i class="bi bi-robot me-1"></i>IA Auto
-                                    </button>
+                                    <div class="btn-group">
+                                        <button class="btn btn-light" onclick="chargerPlanning()">
+                                            <i class="bi bi-arrow-clockwise"></i>
+                                        </button>
+                                        <button class="btn btn-danger" onclick="effacerPlanning()">
+                                            <i class="bi bi-trash me-1"></i>Effacer tout
+                                        </button>
+                                        <button class="btn btn-warning btn-lg px-4" onclick="remplirPlanningAuto()">
+                                            <i class="bi bi-robot me-1"></i>Remplissage IA Auto
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -157,6 +196,46 @@ require_once 'config.php';
             <!-- ONGLET PARAMÈTRES -->
             <div class="tab-pane fade" id="parametres" role="tabpanel">
                 <div class="row g-4">
+                    <!-- Logo de l'entreprise -->
+                    <div class="col-md-4">
+                        <div class="card shadow-sm">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0"><i class="bi bi-image me-2"></i>Logo de l'entreprise</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="text-center mb-3" id="logo-preview">
+                                    <?php 
+                                    $logoPath = getConfig('logo_path');
+                                    if ($logoPath): 
+                                    ?>
+                                        <img src="<?php echo htmlspecialchars($logoPath); ?>" 
+                                             alt="Logo" class="img-fluid mb-2" style="max-height: 100px">
+                                        <button class="btn btn-sm btn-danger d-block w-100" onclick="supprimerLogo()">
+                                            <i class="bi bi-trash me-1"></i>Supprimer le logo
+                                        </button>
+                                    <?php else: ?>
+                                        <div class="text-muted">
+                                            <i class="bi bi-image" style="font-size: 3rem;"></i>
+                                            <p>Aucun logo</p>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                                <form id="formLogo" enctype="multipart/form-data" class="mt-3">
+                                    <div class="mb-2">
+                                        <input type="file" id="logo-file" class="form-control" 
+                                               accept="image/png,image/jpeg,image/gif">
+                                        <small class="text-muted d-block mt-1">
+                                            Format : PNG, JPEG ou GIF (max 2MB)
+                                        </small>
+                                    </div>
+                                    <button type="button" class="btn btn-primary w-100" onclick="uploadLogo()">
+                                        <i class="bi bi-cloud-upload me-1"></i>Télécharger
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <!-- Types de permis -->
                     <div class="col-md-4">
                         <div class="card shadow-sm">
@@ -243,8 +322,91 @@ require_once 'config.php';
                     </div>
                 </div>
             </div>
+
+            <!-- ONGLET UTILISATEURS (ADMIN ONLY) -->
+            <?php if ($user['role'] === 'admin'): ?>
+            <div class="tab-pane fade" id="utilisateurs" role="tabpanel">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-gradient-primary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-people me-2"></i>Gestion des Utilisateurs</h5>
+                        <button class="btn btn-light" onclick="afficherModalUtilisateur()">
+                            <i class="bi bi-person-plus me-2"></i>Nouvel utilisateur
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Utilisateur</th>
+                                        <th>Rôle</th>
+                                        <th>Email</th>
+                                        <th>Dernière connexion</th>
+                                        <th>Statut</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="liste-utilisateurs"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
+
+    <!-- Modal Utilisateur -->
+    <?php if ($user['role'] === 'admin'): ?>
+    <div class="modal fade" id="modalUtilisateur" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="modalUtilisateurTitle">Nouvel utilisateur</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="formUtilisateur">
+                        <input type="hidden" id="u-id">
+                        <div class="mb-3">
+                            <label class="form-label">Nom d'utilisateur *</label>
+                            <input type="text" id="u-username" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Mot de passe <span id="pwd-info">(requis)</span></label>
+                            <input type="password" id="u-password" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Nom complet</label>
+                            <input type="text" id="u-nom" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Email</label>
+                            <input type="email" id="u-email" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Rôle</label>
+                            <select id="u-role" class="form-select">
+                                <option value="user">Utilisateur</option>
+                                <option value="admin">Administrateur</option>
+                            </select>
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" id="u-actif" class="form-check-input" checked>
+                            <label class="form-check-label">Compte actif</label>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="button" class="btn btn-primary" onclick="sauvegarderUtilisateur()">
+                        <i class="bi bi-save me-2"></i>Enregistrer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- Modal Conducteur -->
     <div class="modal fade" id="modalConducteur" tabindex="-1">

@@ -11,16 +11,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Logs pour debugging
-$logFile = __DIR__ . '/api_debug.log';
-function debugLog($message) {
-    global $logFile;
-    file_put_contents($logFile, date('[Y-m-d H:i:s] ') . $message . "\n", FILE_APPEND);
+// Configuration du log d'API
+class APILogger {
+    private static $instance = null;
+    private $logFile;
+    
+    private function __construct() {
+        $this->logFile = __DIR__ . '/api_debug.log';
+        
+        // Rotation des logs si > 5Mo
+        if (file_exists($this->logFile) && filesize($this->logFile) > 5 * 1024 * 1024) {
+            rename($this->logFile, $this->logFile . '.' . date('Y-m-d'));
+        }
+    }
+    
+    public static function getInstance() {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+    
+    public function log($level, $message, $context = []) {
+        if (!APP_DEBUG && $level === 'DEBUG') return;
+        
+        $log = sprintf(
+            "[%s] [%s] %s %s\n",
+            date('Y-m-d H:i:s'),
+            strtoupper($level),
+            $message,
+            !empty($context) ? json_encode($context) : ''
+        );
+        
+        file_put_contents($this->logFile, $log, FILE_APPEND);
+    }
 }
 
-debugLog("=== NOUVELLE REQUÊTE ===");
-debugLog("Action: " . ($_GET['action'] ?? 'none'));
-debugLog("Method: " . $_SERVER['REQUEST_METHOD']);
+$logger = APILogger::getInstance();
+$logger->log('INFO', 'Nouvelle requête API', [
+    'action' => $_GET['action'] ?? 'none',
+    'method' => $_SERVER['REQUEST_METHOD'],
+    'ip' => $_SERVER['REMOTE_ADDR']
+]);
 
 // Vérifier config
 if (!file_exists('config.php')) {

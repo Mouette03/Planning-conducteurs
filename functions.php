@@ -11,39 +11,101 @@ function jsonResponse($data, $statusCode = 200) {
 
 // ==================== CONDUCTEURS ====================
 
-function getConducteurs() {
-    $pdo = Database::getInstance();
-    $stmt = $pdo->query("SELECT * FROM " . DB_PREFIX . "conducteurs ORDER BY nom, prenom");
-    return $stmt->fetchAll();
+function validateConducteur($data) {
+    $errors = [];
+    
+    if (empty($data['nom'])) $errors[] = "Le nom est requis";
+    if (empty($data['prenom'])) $errors[] = "Le prénom est requis";
+    if (empty($data['permis'])) $errors[] = "Le permis est requis";
+    
+    if (!empty($data['contact']) && !filter_var($data['contact'], FILTER_VALIDATE_EMAIL)) {
+        $errors[] = "L'email n'est pas valide";
+    }
+    
+    if (isset($data['experience']) && ($data['experience'] < 0 || $data['experience'] > 50)) {
+        $errors[] = "L'expérience doit être comprise entre 0 et 50 ans";
+    }
+    
+    $statutsValides = ['CDI', 'CDD', 'interimaire', 'sous-traitant'];
+    if (!empty($data['statut_entreprise']) && !in_array($data['statut_entreprise'], $statutsValides)) {
+        $errors[] = "Statut d'entreprise invalide";
+    }
+    
+    return $errors;
+}
+
+function getConducteurs($withPerformance = false) {
+    try {
+        $sql = "SELECT c.*, 
+                COALESCE(AVG(p.score_ia), 0) as score_moyen,
+                COUNT(DISTINCT p.id) as nb_attributions
+                FROM " . DB_PREFIX . "conducteurs c
+                LEFT JOIN " . DB_PREFIX . "planning p ON c.id = p.conducteur_id";
+        
+        if ($withPerformance) {
+            $sql .= " AND p.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)";
+        }
+        
+        $sql .= " GROUP BY c.id ORDER BY c.nom, c.prenom";
+        
+        return Database::prepare($sql)->fetchAll();
+    } catch (Exception $e) {
+        error_log("Erreur getConducteurs: " . $e->getMessage());
+        throw new Exception("Erreur lors de la récupération des conducteurs");
+    }
 }
 
 function getConducteur($id) {
-    $pdo = Database::getInstance();
-    $stmt = $pdo->prepare("SELECT * FROM " . DB_PREFIX . "conducteurs WHERE id = ?");
-    $stmt->execute([$id]);
-    return $stmt->fetch();
+    try {
+        $sql = "SELECT c.*, 
+                COALESCE(AVG(p.score_ia), 0) as score_moyen,
+                COUNT(DISTINCT p.id) as nb_attributions
+                FROM " . DB_PREFIX . "conducteurs c
+                LEFT JOIN " . DB_PREFIX . "planning p ON c.id = p.conducteur_id
+                WHERE c.id = ?
+                GROUP BY c.id";
+                
+        return Database::prepare($sql, [$id])->fetch();
+    } catch (Exception $e) {
+        error_log("Erreur getConducteur: " . $e->getMessage());
+        throw new Exception("Erreur lors de la récupération du conducteur");
+    }
 }
 
 function addConducteur($data) {
-    $pdo = Database::getInstance();
-    $sql = "INSERT INTO " . DB_PREFIX . "conducteurs
-            (nom, prenom, permis, contact, experience, statut_entreprise, tournees_maitrisees, tournee_titulaire, repos_recurrents, conges, statut_temporaire)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute([
-        $data['nom'],
-        $data['prenom'],
-        $data['permis'],
-        $data['contact'] ?? null,
-        $data['experience'] ?? 0,
-        $data['statut_entreprise'] ?? 'CDI',
-        json_encode($data['tournees_maitrisees'] ?? []),
-        $data['tournee_titulaire'] ?? null,
-        isset($data['repos_recurrents']) ? json_encode($data['repos_recurrents']) : null,
-        isset($data['conges']) ? json_encode($data['conges']) : null,
-        $data['statut_temporaire'] ?? 'disponible'
-    ]);
-    return $pdo->lastInsertId();
+    try {
+        $errors = validateConducteur($data);
+        if (!empty($errors)) {
+            throw new Exception(implode("\n", $errors));
+        }
+
+        $sql = "INSERT INTO " . DB_PREFIX . "conducteurs
+                (nom, prenom, permis, contact, experience, statut_entreprise, 
+                tournees_maitrisees, tournee_titulaire, repos_recurrents, 
+                conges, statut_temporaire, date_creation)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+        
+        $params = [
+            $data['nom'],
+            $data['prenom'],
+            $data['permis'],
+            $data['contact'] ?? null,
+            $data['experience'] ?? 0,
+            $data['statut_entreprise'] ?? 'CDI',
+            json_encode($data['tournees_maitrisees'] ?? []),
+            $data['tournee_titulaire'] ?? null,
+            isset($data['repos_recurrents']) ? json_encode($data['repos_recurrents']) : null,
+            isset($data['conges']) ? json_encode($data['conges']) : null,
+            $data['statut_temporaire'] ?? 'disponible'
+        ];
+        
+        $stmt = Database::prepare($sql, $params);
+        return Database::getInstance()->lastInsertId();
+        
+    } catch (Exception $e) {
+        error_log("Erreur addConducteur: " . $e->getMessage());
+        throw new Exception("Erreur lors de l'ajout du conducteur");
+    }
 }
 
 function updateConducteur($id, $data) {
@@ -277,7 +339,14 @@ function calculerScoreConducteur($conducteurId, $tourneeId, $date, $periode) {
 function verifierDisponibilite($conducteur, $date, $periode) {
     // Vérifier statut temporaire
     if ($conducteur['statut_temporaire'] !== 'disponible') {
-        return ['disponible' => false, 'raison' => ucfirst($conducteur['statut_temporaire'])];
+        // Vérifier si le statut temporaire a une date de fin
+        $statut_temp_fin = !empty($conducteur['statut_temporaire_fin']) ? 
+            new DateTime($conducteur['statut_temporaire_fin']) : null;
+        
+        // Si pas de date de fin OU date actuelle <= date de fin
+        if (!$statut_temp_fin || new DateTime($date) <= $statut_temp_fin) {
+            return ['disponible' => false, 'raison' => ucfirst($conducteur['statut_temporaire'])];
+        }
     }
     
     // Vérifier repos récurrents avec semaines paires/impaires

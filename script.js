@@ -2,24 +2,88 @@
  * script.js - Gère l'interactivité et les appels API de l'application
  */
 
-// Variables globales
-let conducteurs = [], tournees = [], config = {};
+// Configuration et état de l'application
+const AppState = {
+    conducteurs: [],
+    tournees: [],
+    config: {},
+    cache: new Map(),
+    selectedPeriod: {
+        debut: null,
+        fin: null
+    }
+};
 
-// Initialisation
-document.addEventListener('DOMContentLoaded', () => {
-    initDates();
-    initApp();
-    setupTabListeners();
+// Gestionnaire d'état et de cache
+class StateManager {
+    static CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+    static get(key) {
+        const cached = AppState.cache.get(key);
+        if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+            return cached.data;
+        }
+        return null;
+    }
+
+    static set(key, data) {
+        AppState.cache.set(key, {
+            data,
+            timestamp: Date.now()
+        });
+    }
+
+    static clear(key) {
+        if (key) {
+            AppState.cache.delete(key);
+        } else {
+            AppState.cache.clear();
+        }
+    }
+}
+
+// Initialisation avec gestion des erreurs améliorée
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        await initApp();
+        setupEventListeners();
+    } catch (error) {
+        console.error('Erreur initialisation:', error);
+        showToast('Erreur', 'Impossible d\'initialiser l\'application', 'danger');
+    }
 });
 
-// Initialise les dates par défaut (semaine en cours)
+// Initialise l'application de manière asynchrone
+async function initApp() {
+    initDates();
+    
+    await Promise.all([
+        loadInitialData(),
+        setupServiceWorker()
+    ]);
+}
+
+// Initialise les dates par défaut avec validation
 function initDates() {
     const debut = document.getElementById('planning-date-debut');
     const fin = document.getElementById('planning-date-fin');
-    if (debut && fin) {
-        debut.value = getMonday();
-        fin.value = getSunday();
+    
+    if (!debut || !fin) {
+        console.warn('Éléments de date non trouvés');
+        return;
     }
+    
+    const monday = getMonday();
+    const sunday = getSunday();
+    
+    debut.value = monday;
+    fin.value = sunday;
+    
+    AppState.selectedPeriod = { debut: monday, fin: sunday };
+    
+    // Validation des dates
+    debut.addEventListener('change', validateDateRange);
+    fin.addEventListener('change', validateDateRange);
 }
 
 // Initialise l'application
@@ -29,11 +93,21 @@ async function initApp() {
             chargerStats(),
             chargerConducteurs(),
             chargerTournees(),
-            chargerConfig()
+            chargerConfig(),
+            chargerUtilisateurs() // Chargement des utilisateurs si admin
         ]);
     } catch (e) {
         console.error('Init error', e);
         showToast('Erreur', 'Impossible de charger les données', 'danger');
+    }
+
+    // Mise à jour du texte de la page en fonction du rôle
+    if (document.getElementById('mainTabs')) {
+        const isAdmin = document.getElementById('utilisateurs-tab') !== null;
+        if (!isAdmin) {
+            // Masquer les fonctionnalités réservées aux administrateurs
+            document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+        }
     }
 }
 
@@ -303,13 +377,29 @@ function afficherModalConducteur(id=null) {
         <hr>
         <div class="mb-3">
             <label class="form-label"><i class="bi bi-info-circle me-2"></i>Statut temporaire</label>
-            <select id="c-statut-temp" class="form-select">
-                <option value="disponible" ${c.statut_temporaire==='disponible'||!c.statut_temporaire?'selected':''}>Disponible</option>
-                <option value="conge" ${c.statut_temporaire==='conge'?'selected':''}>En congé</option>
-                <option value="malade" ${c.statut_temporaire==='malade'?'selected':''}>Malade</option>
-                <option value="formation" ${c.statut_temporaire==='formation'?'selected':''}>En formation</option>
-                <option value="repos" ${c.statut_temporaire==='repos'?'selected':''}>Repos</option>
-            </select>
+            <div class="row g-2">
+                <div class="col">
+                    <select id="c-statut-temp" class="form-select" onchange="toggleStatutTemporaireDate(this)">
+                        <option value="disponible" ${c.statut_temporaire==='disponible'||!c.statut_temporaire?'selected':''}>Disponible</option>
+                        <option value="conge" ${c.statut_temporaire==='conge'?'selected':''}>En congé</option>
+                        <option value="malade" ${c.statut_temporaire==='malade'?'selected':''}>Malade</option>
+                        <option value="formation" ${c.statut_temporaire==='formation'?'selected':''}>En formation</option>
+                        <option value="repos" ${c.statut_temporaire==='repos'?'selected':''}>Repos</option>
+                    </select>
+                </div>
+                <div class="col-auto" id="statut-temp-date-group" style="display: ${c.statut_temporaire !== 'disponible' ? 'block' : 'none'}">
+                    <div class="input-group">
+                        <span class="input-group-text">Jusqu'au</span>
+                        <input type="date" id="c-statut-temp-fin" class="form-control" 
+                               value="${c.statut_temporaire_fin || ''}"
+                               min="${new Date().toISOString().split('T')[0]}">
+                        <button class="btn btn-outline-secondary" type="button" onclick="clearStatutTemporaireFin()">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                    <small class="text-muted">Laisser vide si pas de date de fin</small>
+                </div>
+            </div>
         </div>
         <div class="mb-3">
             <label class="form-label"><i class="bi bi-calendar-event me-2"></i>Périodes de congés</label>
@@ -356,6 +446,22 @@ function ajouterConge() {
     list.appendChild(div);
 }
 
+// Gestion de l'affichage du champ de date pour le statut temporaire
+function toggleStatutTemporaireDate(select) {
+    const dateGroup = document.getElementById('statut-temp-date-group');
+    if (select.value === 'disponible') {
+        dateGroup.style.display = 'none';
+        document.getElementById('c-statut-temp-fin').value = '';
+    } else {
+        dateGroup.style.display = 'block';
+    }
+}
+
+// Effacer la date de fin du statut temporaire
+function clearStatutTemporaireFin() {
+    document.getElementById('c-statut-temp-fin').value = '';
+}
+
 async function sauvegarderConducteur() {
     const id = document.getElementById('c-id').value;
     
@@ -380,6 +486,9 @@ async function sauvegarderConducteur() {
         }
     });
     
+    const statutTemp = document.getElementById('c-statut-temp').value;
+    const statutTempFin = document.getElementById('c-statut-temp-fin').value;
+
     const data = {
         prenom: document.getElementById('c-prenom').value,
         nom: document.getElementById('c-nom').value,
@@ -391,7 +500,8 @@ async function sauvegarderConducteur() {
         tournee_titulaire: document.getElementById('c-titulaire').value || null,
         repos_recurrents: { jours: reposJours, type: typeRepos },
         conges: conges,
-        statut_temporaire: document.getElementById('c-statut-temp').value
+        statut_temporaire: statutTemp,
+        statut_temporaire_fin: statutTemp === 'disponible' ? null : (statutTempFin || null)
     };
     
     try {
@@ -684,6 +794,39 @@ async function sauvegarderAttribution(select) {
 }
 
 
+// Fonction pour effacer tout le planning sur une période
+async function effacerPlanning() {
+    const debut = document.getElementById('planning-date-debut').value;
+    const fin = document.getElementById('planning-date-fin').value;
+    
+    if (!debut || !fin) {
+        showToast('Attention', 'Sélectionnez une période valide', 'warning');
+        return;
+    }
+
+    if (!confirm(`Êtes-vous sûr de vouloir effacer TOUT le planning du ${debut} au ${fin} ? Cette action est irréversible.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('api.php?action=get_planning&debut=' + debut + '&fin=' + fin);
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            // Supprime chaque attribution
+            for (const attribution of result.data) {
+                await apiCall('delete_attribution', 'POST', { id: attribution.id });
+            }
+            
+            showToast('Succès', 'Planning effacé avec succès', 'success');
+            await chargerPlanning(); // Recharge le planning
+        }
+    } catch (error) {
+        console.error('Erreur effacement planning:', error);
+        showToast('Erreur', 'Impossible d\'effacer le planning', 'danger');
+    }
+}
+
 async function remplirPlanningAuto() {
     const debut = document.getElementById('planning-date-debut').value;
     const fin = document.getElementById('planning-date-fin').value;
@@ -839,4 +982,101 @@ async function supprimerVehicule(val) {
     await apiCall('set_config', 'POST', { types_vehicules: config.types_vehicules });
     showToast('Succès', 'Véhicule supprimé', 'warning');
     chargerConfig();
+}
+
+// Gestion du logo
+async function uploadLogo() {
+    const fileInput = document.getElementById('logo-file');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        showToast('Erreur', 'Veuillez sélectionner un fichier', 'warning');
+        return;
+    }
+
+    // Vérification de la taille
+    if (file.size > 2 * 1024 * 1024) {
+        showToast('Erreur', 'Le fichier est trop volumineux (max 2MB)', 'danger');
+        return;
+    }
+
+    // Vérification du type
+    if (!['image/jpeg', 'image/png', 'image/gif'].includes(file.type)) {
+        showToast('Erreur', 'Format de fichier non supporté', 'danger');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('logo', file);
+
+    try {
+        const response = await fetch('upload_logo.php', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast('Succès', 'Logo mis à jour', 'success');
+            // Mettre à jour l'aperçu
+            const preview = document.getElementById('logo-preview');
+            preview.innerHTML = `
+                <img src="${result.path}" alt="Logo" class="img-fluid mb-2" style="max-height: 100px">
+                <button class="btn btn-sm btn-danger d-block w-100" onclick="supprimerLogo()">
+                    <i class="bi bi-trash me-1"></i>Supprimer le logo
+                </button>
+            `;
+            // Mettre à jour le logo dans la navbar
+            const navbarLogo = document.createElement('img');
+            navbarLogo.src = result.path;
+            navbarLogo.alt = 'Logo';
+            navbarLogo.className = 'navbar-logo me-3';
+            navbarLogo.style = 'max-height: 40px; width: auto;';
+            
+            const existingLogo = document.querySelector('.navbar-logo');
+            if (existingLogo) {
+                existingLogo.replaceWith(navbarLogo);
+            } else {
+                document.querySelector('.navbar .d-flex').prepend(navbarLogo);
+            }
+            
+            // Réinitialiser l'input file
+            fileInput.value = '';
+        } else {
+            throw new Error(result.error);
+        }
+    } catch (error) {
+        console.error('Erreur upload:', error);
+        showToast('Erreur', error.message || 'Erreur lors de l\'upload', 'danger');
+    }
+}
+
+async function supprimerLogo() {
+    if (!confirm('Voulez-vous vraiment supprimer le logo ?')) {
+        return;
+    }
+
+    try {
+        await apiCall('set_config', 'POST', { logo_path: null });
+        
+        // Mettre à jour l'aperçu
+        document.getElementById('logo-preview').innerHTML = `
+            <div class="text-muted">
+                <i class="bi bi-image" style="font-size: 3rem;"></i>
+                <p>Aucun logo</p>
+            </div>
+        `;
+        
+        // Supprimer le logo de la navbar
+        const navbarLogo = document.querySelector('.navbar-logo');
+        if (navbarLogo) {
+            navbarLogo.remove();
+        }
+        
+        showToast('Succès', 'Logo supprimé', 'success');
+    } catch (error) {
+        console.error('Erreur suppression logo:', error);
+        showToast('Erreur', 'Impossible de supprimer le logo', 'danger');
+    }
 }
