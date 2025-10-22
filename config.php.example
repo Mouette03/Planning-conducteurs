@@ -8,3 +8,4 @@ define('DB_USER', 'root');
 define('DB_PASS', '');
 define('DB_PREFIX', 'plan_');
 define('DB_CHARSET', 'utf8mb4');
+define('APP_DEBUG', true);
