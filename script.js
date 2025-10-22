@@ -42,49 +42,15 @@ class StateManager {
     }
 }
 
-// Initialisation avec gestion des erreurs améliorée
+// Initialisation
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         await initApp();
-        setupEventListeners();
     } catch (error) {
         console.error('Erreur initialisation:', error);
         showToast('Erreur', 'Impossible d\'initialiser l\'application', 'danger');
     }
 });
-
-// Initialise l'application de manière asynchrone
-async function initApp() {
-    initDates();
-    
-    await Promise.all([
-        loadInitialData(),
-        setupServiceWorker()
-    ]);
-}
-
-// Initialise les dates par défaut avec validation
-function initDates() {
-    const debut = document.getElementById('planning-date-debut');
-    const fin = document.getElementById('planning-date-fin');
-    
-    if (!debut || !fin) {
-        console.warn('Éléments de date non trouvés');
-        return;
-    }
-    
-    const monday = getMonday();
-    const sunday = getSunday();
-    
-    debut.value = monday;
-    fin.value = sunday;
-    
-    AppState.selectedPeriod = { debut: monday, fin: sunday };
-    
-    // Validation des dates
-    debut.addEventListener('change', validateDateRange);
-    fin.addEventListener('change', validateDateRange);
-}
 
 // Initialise l'application
 async function initApp() {
@@ -100,6 +66,9 @@ async function initApp() {
         console.error('Init error', e);
         showToast('Erreur', 'Impossible de charger les données', 'danger');
     }
+
+    // Configuration des onglets
+    setupTabListeners();
 
     // Mise à jour du texte de la page en fonction du rôle
     if (document.getElementById('mainTabs')) {
@@ -120,7 +89,16 @@ function setupTabListeners() {
                 case '#accueil': chargerStats(); break;
                 case '#conducteurs': chargerConducteurs(); break;
                 case '#tournees': chargerTournees(); break;
-                case '#planning': chargerPlanning(); break;
+                case '#planning': 
+                    // Initialiser les dates de la semaine en cours
+                    const debut = document.getElementById('planning-date-debut');
+                    const fin = document.getElementById('planning-date-fin');
+                    if (debut && fin && !debut.value) {
+                        debut.value = getMonday();
+                        fin.value = getSunday();
+                    }
+                    chargerPlanning(); 
+                    break;
                 case '#parametres': chargerConfig(); break;
             }
         });
@@ -174,7 +152,7 @@ function getMonday() {
 
 function getSunday() {
     const m = new Date(getMonday());
-    m.setDate(m.getDate() + 6);
+    m.setDate(m.getDate() + 6); // +6 pour dimanche (lundi à samedi = 6 jours)
     return m.toISOString().split('T')[0];
 }
 
@@ -658,7 +636,10 @@ async function chargerPlanning() {
 function renderPlanning(data, debut, fin) {
     const dates = [];
     for (let d = new Date(debut); d <= new Date(fin); d.setDate(d.getDate() + 1)) {
-        dates.push(new Date(d));
+        // Exclure le dimanche (jour 0)
+        if (d.getDay() !== 0) {
+            dates.push(new Date(d));
+        }
     }
 
     let html = `<table class="table table-bordered planning-table"><thead><tr><th>Tournée</th>`;
@@ -1015,9 +996,16 @@ async function uploadLogo() {
             body: formData
         });
 
-        const result = await response.json();
+        // Lire d'abord le texte (évite d'appeler json() puis text() qui consommerait le body deux fois)
+        const respText = await response.text();
+        let result;
+        try {
+            result = JSON.parse(respText);
+        } catch (e) {
+            throw new Error('Réponse serveur invalide: ' + respText);
+        }
         
-        if (result.success) {
+        if (result && result.success) {
             showToast('Succès', 'Logo mis à jour', 'success');
             // Mettre à jour l'aperçu
             const preview = document.getElementById('logo-preview');
@@ -1044,7 +1032,7 @@ async function uploadLogo() {
             // Réinitialiser l'input file
             fileInput.value = '';
         } else {
-            throw new Error(result.error);
+            throw new Error(result ? (result.error || 'Erreur serveur') : 'Réponse serveur vide');
         }
     } catch (error) {
         console.error('Erreur upload:', error);

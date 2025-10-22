@@ -2,6 +2,7 @@
 require_once 'config.php';
 require_once 'database.php';
 require_once 'auth.php';
+require_once 'functions.php';
 
 // Si déjà connecté, redirection vers l'accueil
 if (isset($_SESSION['user'])) {
@@ -10,6 +11,7 @@ if (isset($_SESSION['user'])) {
 }
 
 $error = '';
+$logoPath = getConfig('logo_path');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = $_POST['username'] ?? '';
@@ -62,7 +64,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
     <div class="login-card">
         <div class="login-logo">
-            <i class="bi bi-truck"></i>
+            <?php if ($logoPath): ?>
+                <img src="<?php echo htmlspecialchars($logoPath); ?>" alt="Logo" style="max-height: 80px; width: auto; margin-bottom: 1rem;">
+            <?php else: ?>
+                <i class="bi bi-truck"></i>
+            <?php endif; ?>
             <div class="h4">Planning Conducteur Pro</div>
         </div>
         

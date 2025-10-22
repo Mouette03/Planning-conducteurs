@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 require_once 'database.php';
+require_once 'functions.php';
 require_once 'auth.php';
 
 // Vérification de l'authentification et des droits admin
@@ -44,7 +45,19 @@ try {
     // Générer un nom de fichier unique
     $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
     $newFilename = 'logo_' . time() . '.' . $extension;
-    $uploadPath = __DIR__ . '/uploads/logos/' . $newFilename;
+    $uploadDir = __DIR__ . '/uploads/logos/';
+    $uploadPath = $uploadDir . $newFilename;
+
+    // Créer le répertoire si nécessaire
+    if (!is_dir($uploadDir)) {
+        if (!mkdir($uploadDir, 0755, true)) {
+            throw new Exception('Impossible de créer le dossier de destination');
+        }
+    }
+
+    if (!is_writable($uploadDir)) {
+        throw new Exception('Le dossier de destination n\'est pas accessible en écriture');
+    }
 
     // Supprimer l'ancien logo si existant
     $oldLogo = getConfig('logo_path');

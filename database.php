@@ -62,6 +62,10 @@ class Database {
             
         } catch (PDOException $e) {
             self::logQuery($sql, $params, microtime(true) - $start, $e->getMessage());
+            // Écrire aussi dans le log d'API pour centraliser les erreurs
+            $logFile = __DIR__ . '/api_debug.log';
+            $entry = sprintf("[%s] [ERROR] PDO Exception: %s SQL: %s Params: %s\n", date('Y-m-d H:i:s'), $e->getMessage(), $sql, json_encode($params));
+            @file_put_contents($logFile, $entry, FILE_APPEND);
             throw $e;
         }
     }

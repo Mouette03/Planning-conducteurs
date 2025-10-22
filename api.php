@@ -69,6 +69,7 @@ try {
     require_once 'config.php';
     require_once 'database.php';
     require_once 'functions.php';
+    require_once 'auth.php';
 } catch (Exception $e) {
     $logger->log('ERROR', "ERREUR require: " . $e->getMessage());
     http_response_code(500);
@@ -230,6 +231,52 @@ try {
             
             $perf = getPerformanceConducteur($conducteurId, $debut, $fin);
             jsonResponse(['success' => true, 'data' => $perf]);
+            break;
+
+        // ========== UTILISATEURS ==========
+        case 'get_users':
+            // Renvoie la liste des utilisateurs (admin seulement)
+            $users = getUsers();
+            jsonResponse(['success' => true, 'data' => $users]);
+            break;
+
+        case 'get_user':
+            $id = $_GET['id'] ?? $input['id'] ?? null;
+            if (!$id) jsonResponse(['success' => false, 'error' => 'ID manquant'], 400);
+            $userData = getUserById($id);
+            jsonResponse(['success' => true, 'data' => $userData]);
+            break;
+
+        case 'add_user':
+            $newId = createUser($input);
+            jsonResponse(['success' => true, 'id' => $newId], 201);
+            break;
+
+        case 'update_user':
+            if (!isset($input['id'])) throw new Exception('ID manquant pour update_user');
+            updateUser($input['id'], $input);
+            jsonResponse(['success' => true, 'message' => 'Utilisateur mis à jour']);
+            break;
+
+        case 'delete_user':
+            $id = $input['id'] ?? $_GET['id'] ?? 0;
+            if (!$id) throw new Exception('ID manquant pour delete_user');
+            deleteUser($id);
+            jsonResponse(['success' => true, 'message' => 'Utilisateur supprimé']);
+            break;
+
+        case 'get_profile':
+            // Retourne le profil de l'utilisateur connecté
+            if (!isset($_SESSION['user'])) jsonResponse(['success' => false, 'error' => 'Non authentifié'], 401);
+            $profile = getUserById($_SESSION['user']['id']);
+            jsonResponse(['success' => true, 'data' => $profile]);
+            break;
+
+        case 'update_profile':
+            if (!isset($_SESSION['user'])) jsonResponse(['success' => false, 'error' => 'Non authentifié'], 401);
+            $uid = $_SESSION['user']['id'];
+            updateUser($uid, $input);
+            jsonResponse(['success' => true, 'message' => 'Profil mis à jour']);
             break;
             
         case 'remplir_auto':
