@@ -9,6 +9,15 @@
 .bg-gradient-success {
     background: linear-gradient(135deg, #00B09B, #96C93D);
 }
+.bg-gradient-info {
+    background: linear-gradient(135deg, #17a2b8, #5bc0de);
+}
+.bg-gradient-warning {
+    background: linear-gradient(135deg, #ffc107, #ffb300);
+}
+.bg-gradient-danger {
+    background: linear-gradient(135deg, #dc3545, #e74c3c);
+}
 
 /* Stat cards */
 .stat-card {
@@ -32,18 +41,105 @@
 /* Planning table */
 .planning-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     table-layout: fixed;
+    min-width: 100%;
 }
 .planning-table th, .planning-table td {
     border: 1px solid #dee2e6;
     padding: 0.25rem;
     vertical-align: top;
+    min-width: 150px;
 }
+
+/* Séparation forte entre les lignes de tournées */
+.planning-table tbody tr {
+    border-bottom: 3px solid #0052D4;
+}
+
+.planning-table tbody tr:nth-child(odd) td:first-child {
+    background-color: #f8f9fa;
+}
+
+.planning-table tbody tr:nth-child(even) td:first-child {
+    background-color: #e9ecef;
+}
+
 .planning-table th {
-    background-color: #f1f3f5;
+    background-color: #0052D4;
+    color: white;
     font-weight: 600;
     text-align: center;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    border: 1px solid #003d9e;
+}
+.planning-table td:first-child,
+.planning-table th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 20;
+    min-width: 180px;
+    max-width: 180px;
+    font-weight: 600;
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+}
+.planning-table th:first-child {
+    z-index: 30;
+    background-color: #003d9e;
+}
+
+/* Container avec scroll horizontal */
+.planning-scroll-container {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 70vh;
+    position: relative;
+}
+
+/* Animation de transition pour le changement de semaine */
+@keyframes fadeIn {
+    from {
+        opacity: 0.5;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.planning-table {
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+/* Style de la scrollbar */
+.planning-scroll-container::-webkit-scrollbar {
+    height: 12px;
+    width: 12px;
+}
+.planning-scroll-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+.planning-scroll-container::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 6px;
+}
+.planning-scroll-container::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Style pour les cellules du planning */
+.planning-cell {
+    transition: all 0.2s ease;
+    min-height: 85px;
+    display: flex;
+    flex-direction: column;
+}
+.planning-cell:hover {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 /* Modals */
@@ -58,6 +154,8 @@
 /* Buttons */
 .btn-primary { background-color: #0052D4; border-color: #0052D4; }
 .btn-success { background-color: #00B09B; border-color: #00B09B; }
+.btn-info { background-color: #17a2b8; border-color: #17a2b8; color: white; }
+.btn-info:hover { background-color: #138496; border-color: #117a8b; color: white; }
 .btn-outline-danger { color: #dc3545; border-color: #dc3545; }
 .btn-outline-danger:hover { background-color: #dc3545; color: #fff; }
 

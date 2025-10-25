@@ -200,6 +200,72 @@ try {
             jsonResponse(['success' => true, 'message' => 'Attribution supprimée']);
             break;
             
+        case 'update_attribution':
+            $id = $input['id'] ?? $_GET['id'] ?? 0;
+            if (!$id) {
+                throw new Exception('ID manquant pour update_attribution');
+            }
+            $data = [];
+            if (array_key_exists('conducteur_id', $input)) {
+                $data['conducteur_id'] = $input['conducteur_id'];
+            }
+            if (array_key_exists('score_ia', $input)) {
+                $data['score_ia'] = $input['score_ia'];
+            }
+            if (isset($input['statut'])) {
+                $data['statut'] = $input['statut'];
+            }
+            updateAttribution($id, $data);
+            jsonResponse(['success' => true, 'message' => 'Attribution mise à jour']);
+            break;
+            
+        case 'effacer_planning_periode':
+            // Efface les attributions sur une période donnée
+            $debut = $input['debut'] ?? $_GET['debut'] ?? null;
+            $fin = $input['fin'] ?? $_GET['fin'] ?? null;
+            
+            if (!$debut || !$fin) {
+                throw new Exception('Dates de début et fin requises');
+            }
+            
+            $pdo = Database::getInstance();
+            $stmt = $pdo->prepare("DELETE FROM " . DB_PREFIX . "planning WHERE date >= ? AND date <= ?");
+            $stmt->execute([$debut, $fin]);
+            $nbSupprimees = $stmt->rowCount();
+            
+            $logger->log('INFO', "Planning période effacé: $nbSupprimees lignes supprimées (du $debut au $fin)");
+            
+            jsonResponse([
+                'success' => true, 
+                'message' => 'Planning de la période effacé',
+                'nb_supprimees' => $nbSupprimees
+            ]);
+            break;
+            
+        case 'effacer_planning_complet':
+            // Vérifier que l'utilisateur est administrateur
+            if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'admin') {
+                jsonResponse(['success' => false, 'error' => 'Action réservée aux administrateurs'], 403);
+                exit;
+            }
+            
+            // Efface TOUTES les attributions (toutes les semaines)
+            $pdo = Database::getInstance();
+            $stmt = $pdo->query("SELECT COUNT(*) FROM " . DB_PREFIX . "planning");
+            $nbAvant = $stmt->fetchColumn();
+            
+            $stmt = $pdo->query("DELETE FROM " . DB_PREFIX . "planning");
+            $nbSupprimees = $stmt->rowCount();
+            
+            $logger->log('INFO', "Planning complet effacé par {$_SESSION['user']['username']}: $nbSupprimees lignes supprimées (total avant: $nbAvant)");
+            
+            jsonResponse([
+                'success' => true, 
+                'message' => 'Planning complet effacé',
+                'nb_supprimees' => $nbSupprimees
+            ]);
+            break;
+            
         // ========== IA & SCORING ==========
         case 'calculer_score':
             $conducteurId = $_GET['conducteur_id'] ?? 0;
@@ -306,6 +372,97 @@ try {
                 setConfig($cle, $valeur);
             }
             jsonResponse(['success' => true, 'message' => 'Configuration mise à jour']);
+            break;
+        
+        // ========== PROFIL UTILISATEUR ==========
+        case 'get_current_user':
+            verifierAuthentification();
+            $user = $_SESSION['user'];
+            jsonResponse(['success' => true, 'data' => $user]);
+            break;
+            
+        // ========== EXPORT RGPD ==========
+        case 'export_rgpd':
+            $conducteurId = $_GET['conducteur_id'] ?? 0;
+            if (!$conducteurId) {
+                throw new Exception('ID conducteur manquant');
+            }
+            
+            // Récupérer les informations du conducteur
+            $conducteur = getConducteur($conducteurId);
+            if (!$conducteur) {
+                throw new Exception('Conducteur introuvable');
+            }
+            
+            // Récupérer toutes les données liées au conducteur
+            $pdo = Database::getInstance();
+            
+            // Historique de planning (6 derniers mois)
+            $dateDebut = date('Y-m-d', strtotime('-6 months'));
+            $stmt = $pdo->prepare("
+                SELECT p.*, t.nom as tournee_nom, t.type_tournee 
+                FROM " . DB_PREFIX . "planning p
+                LEFT JOIN " . DB_PREFIX . "tournees t ON p.tournee_id = t.id
+                WHERE p.conducteur_id = ? AND p.date >= ?
+                ORDER BY p.date DESC, p.periode ASC
+            ");
+            $stmt->execute([$conducteurId, $dateDebut]);
+            $historiquePlanning = $stmt->fetchAll();
+            
+            // Statistiques de performance
+            $dateDebutStats = date('Y-m-d', strtotime('-3 months'));
+            $dateFin = date('Y-m-d');
+            $performance = getPerformanceConducteur($conducteurId, $dateDebutStats, $dateFin);
+            
+            // Construire l'export RGPD complet
+            $exportData = [
+                'date_export' => date('Y-m-d H:i:s'),
+                'finalite' => 'Export des données personnelles conformément au RGPD (Droit d\'accès)',
+                'conducteur' => [
+                    'id' => $conducteur['id'],
+                    'nom' => $conducteur['nom'],
+                    'prenom' => $conducteur['prenom'],
+                    'permis' => $conducteur['permis'],
+                    'experience' => $conducteur['experience'],
+                    'statut_entreprise' => $conducteur['statut_entreprise'],
+                    'tournee_titulaire_id' => $conducteur['tournee_titulaire'],
+                    'zone_geographique' => $conducteur['zone_geo'] ?? null,
+                    'connaissance_tournees' => $conducteur['connaissance'] ?? 0,
+                    'date_creation' => $conducteur['date_creation'] ?? null
+                ],
+                'disponibilites' => [
+                    'repos_recurrents' => json_decode($conducteur['repos_recurrents'] ?? '[]', true),
+                    'conges' => json_decode($conducteur['conges'] ?? '[]', true),
+                    'statut_temporaire' => $conducteur['statut_temporaire'] ?? 'disponible',
+                    'statut_temporaire_fin' => $conducteur['statut_temporaire_fin'] ?? null
+                ],
+                'historique_planning' => [
+                    'periode' => "Du $dateDebut à aujourd'hui",
+                    'nombre_attributions' => count($historiquePlanning),
+                    'details' => $historiquePlanning
+                ],
+                'performance' => $performance,
+                'informations_rgpd' => [
+                    'responsable_traitement' => '[NOM DE VOTRE ENTREPRISE]',
+                    'finalite_traitement' => 'Gestion et planification des tournées de livraison',
+                    'base_legale' => 'Exécution d\'un contrat de travail',
+                    'duree_conservation' => '3 ans après fin de contrat (obligations légales)',
+                    'destinataires' => 'Administrateurs de l\'application, responsables planning',
+                    'droits' => [
+                        'Droit d\'accès à vos données',
+                        'Droit de rectification',
+                        'Droit à l\'effacement',
+                        'Droit à la limitation du traitement',
+                        'Droit à la portabilité',
+                        'Droit d\'opposition'
+                    ],
+                    'contact_dpo' => '[EMAIL DPO/CONTACT]',
+                    'reclamation_cnil' => 'www.cnil.fr'
+                ]
+            ];
+            
+            $logger->log('INFO', "Export RGPD effectué pour conducteur ID: $conducteurId");
+            jsonResponse(['success' => true, 'data' => $exportData]);
             break;
             
         // ========== ACTION INCONNUE ==========

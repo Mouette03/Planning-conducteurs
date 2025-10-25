@@ -85,10 +85,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <label class="form-label">Mot de passe</label>
                 <input type="password" name="password" class="form-control" required>
             </div>
+            
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="acceptRGPD" required>
+                <label class="form-check-label small" for="acceptRGPD">
+                    J'accepte la <a href="#" data-bs-toggle="modal" data-bs-target="#modalRGPD" onclick="event.stopPropagation();">politique de confidentialité (RGPD)</a>
+                </label>
+            </div>
+            
             <button type="submit" class="btn btn-primary w-100">
                 <i class="bi bi-box-arrow-in-right me-2"></i>Connexion
             </button>
         </form>
+    </div>
+
+    <!-- Modal RGPD (version simplifiée pour login) -->
+    <div class="modal fade" id="modalRGPD" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">
+                        <i class="bi bi-shield-check me-2"></i>Politique de Confidentialité & RGPD
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        En vous connectant, vous acceptez notre politique de confidentialité.
+                    </div>
+
+                    <h5>Données collectées</h5>
+                    <p>Nous collectons uniquement les données nécessaires au fonctionnement de l'application :</p>
+                    <ul>
+                        <li>Identifiants de connexion (nom d'utilisateur, mot de passe chiffré)</li>
+                        <li>Informations professionnelles (conducteurs, tournées, plannings)</li>
+                        <li>Logs de connexion (date, heure, adresse IP)</li>
+                    </ul>
+
+                    <h5>Utilisation des données</h5>
+                    <ul>
+                        <li>Gestion de votre compte et authentification</li>
+                        <li>Planification et organisation des tournées</li>
+                        <li>Statistiques et optimisation du planning</li>
+                        <li>Sécurité et traçabilité des opérations</li>
+                    </ul>
+
+                    <h5>Vos droits</h5>
+                    <p>Conformément au RGPD, vous disposez des droits suivants :</p>
+                    <ul>
+                        <li><strong>Droit d'accès</strong> à vos données personnelles</li>
+                        <li><strong>Droit de rectification</strong> de vos données</li>
+                        <li><strong>Droit à l'effacement</strong> de vos données</li>
+                        <li><strong>Droit d'opposition</strong> au traitement</li>
+                        <li><strong>Droit à la portabilité</strong> de vos données</li>
+                    </ul>
+
+                    <h5>Sécurité</h5>
+                    <ul>
+                        <li>✅ Mots de passe chiffrés (bcrypt)</li>
+                        <li>✅ Connexions sécurisées (HTTPS recommandé)</li>
+                        <li>✅ Gestion des accès par rôles</li>
+                        <li>✅ Sauvegardes régulières</li>
+                    </ul>
+
+                    <h5>Contact</h5>
+                    <p>
+                        Pour toute question concernant vos données personnelles :<br>
+                        <strong>Email :</strong> <a href="mailto:[VOTRE-EMAIL]">[VOTRE-EMAIL]</a>
+                    </p>
+
+                    <div class="alert alert-success">
+                        <i class="bi bi-shield-lock-fill me-2"></i>
+                        <strong>Aucune donnée n'est partagée avec des tiers.</strong>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>

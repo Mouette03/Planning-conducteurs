@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             `id` INT PRIMARY KEY AUTO_INCREMENT,
             `nom` VARCHAR(100) NOT NULL,
             `prenom` VARCHAR(100) NOT NULL,
-            `permis` VARCHAR(50) NOT NULL,
+            `permis` JSON,
             `contact` VARCHAR(100),
             `experience` INT DEFAULT 0,
             `tournees_maitrisees` JSON,
@@ -66,15 +66,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             `repos_recurrents` JSON,
             `conges` JSON,
             `statut_temporaire` ENUM('disponible','conge','malade','formation','repos') DEFAULT 'disponible',
+            `statut_temporaire_fin` DATE NULL,
             `date_creation` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
         CREATE TABLE IF NOT EXISTS `{$prefix}tournees` (
             `id` INT PRIMARY KEY AUTO_INCREMENT,
             `nom` VARCHAR(100) NOT NULL,
+            `type_tournee` VARCHAR(50) DEFAULT NULL,
+            `ordre_affichage` INT DEFAULT 999,
             `description` TEXT,
             `zone_geo` VARCHAR(100),
             `type_vehicule` VARCHAR(50),
+            `permis_requis` JSON,
             `difficulte` INT DEFAULT 1,
             `duree` ENUM('journee','matin','apres-midi') DEFAULT 'journee',
             `date_creation` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -112,10 +116,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $configInitiale = [
             'types_permis' => json_encode(["B","C","C+E","D","EC"], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'types_vehicules' => json_encode(["3.5T","7.5T","12T","19T","40T","Porteur","Semi-remorque"], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            'poids_titulaire' => '100',
+            'types_tournee' => json_encode([
+                ["nom" => "Express", "ordre" => 1],
+                ["nom" => "Messagerie", "ordre" => 2],
+                ["nom" => "Standard", "ordre" => 3]
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'poids_connaissance' => '80',
             'poids_disponibilite' => '60',
-            'poids_experience' => '40',
+            'poids_experience' => '2',
             'penalite_interimaire' => '-50'
         ];
         
@@ -126,25 +134,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Création des tournées d'exemple
         $pdo->exec("
-        INSERT INTO `{$prefix}tournees` (`nom`, `description`, `zone_geo`, `type_vehicule`, `difficulte`, `duree`) VALUES
-        ('Paris Centre', 'Livraison centre de Paris', 'Paris 75', '12T', 3, 'matin'),
-        ('Banlieue Nord', 'Tournée banlieue nord', '93/95', '19T', 4, 'journee'),
-        ('Express Matin', 'Livraisons express matinales', 'Île-de-France', '7.5T', 2, 'matin'),
-        ('Express Après-midi', 'Livraisons express après-midi', 'Île-de-France', '7.5T', 2, 'apres-midi'),
-        ('Longue Distance', 'Trajet longue distance', 'National', '40T', 5, 'journee'),
-        ('Livraison Locale AM', 'Livraisons locales matin', 'Local', '3.5T', 1, 'matin'),
-        ('Livraison Locale PM', 'Livraisons locales après-midi', 'Local', '3.5T', 1, 'apres-midi')
+        INSERT INTO `{$prefix}tournees` (`nom`, `description`, `zone_geo`, `type_vehicule`, `type_tournee`, `permis_requis`, `difficulte`, `duree`) VALUES
+        ('Paris Centre', 'Livraison centre de Paris', 'Paris 75', '12T', 'urbaine', '[\"C\"]', 3, 'matin'),
+        ('Banlieue Nord', 'Tournée banlieue nord', '93/95', '19T', 'inter-urbaine', '[\"C\",\"E\"]', 4, 'journee'),
+        ('Express Matin', 'Livraisons express matinales', 'Île-de-France', '7.5T', 'express', '[\"C\"]', 2, 'matin'),
+        ('Express Après-midi', 'Livraisons express après-midi', 'Île-de-France', '7.5T', 'express', '[\"C\"]', 2, 'apres-midi'),
+        ('Longue Distance', 'Trajet longue distance', 'National', '40T', 'longue-distance', '[\"C\",\"E\"]', 5, 'journee'),
+        ('Livraison Locale AM', 'Livraisons locales matin', 'Local', '3.5T', 'locale', '[\"B\"]', 1, 'matin'),
+        ('Livraison Locale PM', 'Livraisons locales après-midi', 'Local', '3.5T', 'locale', '[\"B\"]', 1, 'apres-midi')
         ");
 
         // Création des conducteurs d'exemple
         $pdo->exec("
         INSERT INTO `{$prefix}conducteurs` (`nom`, `prenom`, `permis`, `contact`, `experience`, `tournees_maitrisees`, `tournee_titulaire`, `statut_entreprise`, `repos_recurrents`, `conges`) VALUES
-        ('Dupont', 'Jean', 'C', 'jean.dupont@email.fr', 5, '[1]', 1, 'CDI', NULL, NULL),
-        ('Martin', 'Marie', 'C+E', 'marie.martin@email.fr', 8, '[2, 5]', 2, 'CDI', NULL, NULL),
-        ('Durand', 'Pierre', 'C', 'pierre.durand@email.fr', 2, '[3, 4]', NULL, 'CDD', NULL, NULL),
-        ('Bernard', 'Sophie', 'C+E', 'sophie.bernard@email.fr', 10, '[1, 2, 3, 4, 5, 6, 7]', NULL, 'sous-traitant', NULL, NULL),
-        ('Petit', 'Luc', 'C', 'luc.petit@email.fr', 1, '[]', NULL, 'interimaire', NULL, NULL),
-        ('Rousseau', 'Claire', 'C', 'claire.rousseau@email.fr', 4, '[3, 6, 7]', 3, 'CDI', '{\"jours\": [3]}', NULL)
+        ('Dupont', 'Jean', '[\"C\"]', 'jean.dupont@email.fr', 5, '[1]', 1, 'CDI', NULL, NULL),
+        ('Martin', 'Marie', '[\"C\",\"E\"]', 'marie.martin@email.fr', 8, '[2, 5]', 2, 'CDI', NULL, NULL),
+        ('Durand', 'Pierre', '[\"C\"]', 'pierre.durand@email.fr', 2, '[3, 4]', NULL, 'CDD', NULL, NULL),
+        ('Bernard', 'Sophie', '[\"C\",\"E\"]', 'sophie.bernard@email.fr', 10, '[1, 2, 3, 4, 5, 6, 7]', NULL, 'sous-traitant', NULL, NULL),
+        ('Petit', 'Luc', '[\"C\"]', 'luc.petit@email.fr', 1, '[]', NULL, 'interimaire', NULL, NULL),
+        ('Rousseau', 'Claire', '[\"B\",\"C\"]', 'claire.rousseau@email.fr', 4, '[3, 6, 7]', 3, 'CDI', '[3]', NULL)
         ");
 
         $success = "✅ Installation réussie ! Redirection...";

@@ -90,13 +90,13 @@ function addConducteur($data) {
         $sql = "INSERT INTO " . DB_PREFIX . "conducteurs
                 (nom, prenom, permis, contact, experience, statut_entreprise, 
                 tournees_maitrisees, tournee_titulaire, repos_recurrents, 
-                conges, statut_temporaire, date_creation)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                conges, statut_temporaire, statut_temporaire_fin, date_creation)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
         
         $params = [
             $data['nom'],
             $data['prenom'],
-            $data['permis'],
+            is_array($data['permis']) ? json_encode($data['permis']) : $data['permis'],
             $data['contact'] ?? null,
             $data['experience'] ?? 0,
             $data['statut_entreprise'] ?? 'CDI',
@@ -104,7 +104,8 @@ function addConducteur($data) {
             $data['tournee_titulaire'] ?? null,
             isset($data['repos_recurrents']) ? json_encode($data['repos_recurrents']) : null,
             isset($data['conges']) ? json_encode($data['conges']) : null,
-            $data['statut_temporaire'] ?? 'disponible'
+            $data['statut_temporaire'] ?? 'disponible',
+            $data['statut_temporaire_fin'] ?? null
         ];
         
         $stmt = Database::prepare($sql, $params);
@@ -120,13 +121,14 @@ function updateConducteur($id, $data) {
     $pdo = Database::getInstance();
     $sql = "UPDATE " . DB_PREFIX . "conducteurs
             SET nom=?, prenom=?, permis=?, contact=?, experience=?, statut_entreprise=?,
-                tournees_maitrisees=?, tournee_titulaire=?, repos_recurrents=?, conges=?, statut_temporaire=?
+                tournees_maitrisees=?, tournee_titulaire=?, repos_recurrents=?, conges=?, 
+                statut_temporaire=?, statut_temporaire_fin=?
             WHERE id=?";
     $stmt = $pdo->prepare($sql);
     return $stmt->execute([
         $data['nom'],
         $data['prenom'],
-        $data['permis'],
+        is_array($data['permis']) ? json_encode($data['permis']) : $data['permis'],
         $data['contact'] ?? null,
         $data['experience'] ?? 0,
         $data['statut_entreprise'] ?? 'CDI',
@@ -135,6 +137,7 @@ function updateConducteur($id, $data) {
         isset($data['repos_recurrents']) ? json_encode($data['repos_recurrents']) : null,
         isset($data['conges']) ? json_encode($data['conges']) : null,
         $data['statut_temporaire'] ?? 'disponible',
+        $data['statut_temporaire_fin'] ?? null,
         $id
     ]);
 }
@@ -149,7 +152,15 @@ function deleteConducteur($id) {
 
 function getTournees() {
     $pdo = Database::getInstance();
-    $stmt = $pdo->query("SELECT * FROM " . DB_PREFIX . "tournees ORDER BY nom");
+    // Tri automatique par l'ordre du type de tournée depuis les paramètres
+    $sql = "SELECT t.*, 
+            COALESCE(
+                (SELECT valeur FROM " . DB_PREFIX . "config WHERE cle = CONCAT('type_tournee_', t.type_tournee, '_ordre')),
+                999
+            ) as ordre_type
+            FROM " . DB_PREFIX . "tournees t
+            ORDER BY ordre_type ASC, t.nom ASC";
+    $stmt = $pdo->query($sql);
     return $stmt->fetchAll();
 }
 
@@ -163,14 +174,16 @@ function getTournee($id) {
 function addTournee($data) {
     $pdo = Database::getInstance();
     $sql = "INSERT INTO " . DB_PREFIX . "tournees
-            (nom, description, zone_geo, type_vehicule, difficulte, duree)
-            VALUES (?, ?, ?, ?, ?, ?)";
+            (nom, type_tournee, zone_geo, type_vehicule, permis_requis, difficulte, duree)
+            VALUES (?, ?, ?, ?, ?, ?, ?)";
     $stmt = $pdo->prepare($sql);
+    $permisJson = isset($data['permis_requis']) ? json_encode($data['permis_requis']) : '[]';
     $stmt->execute([
         $data['nom'],
-        $data['description'] ?? null,
+        $data['type_tournee'] ?? null,
         $data['zone_geo'] ?? null,
         $data['type_vehicule'] ?? null,
+        $permisJson,
         $data['difficulte'] ?? 1,
         $data['duree'] ?? 'journee'
     ]);
@@ -180,14 +193,16 @@ function addTournee($data) {
 function updateTournee($id, $data) {
     $pdo = Database::getInstance();
     $sql = "UPDATE " . DB_PREFIX . "tournees
-            SET nom=?, description=?, zone_geo=?, type_vehicule=?, difficulte=?, duree=?
+            SET nom=?, type_tournee=?, zone_geo=?, type_vehicule=?, permis_requis=?, difficulte=?, duree=?
             WHERE id=?";
     $stmt = $pdo->prepare($sql);
+    $permisJson = isset($data['permis_requis']) ? json_encode($data['permis_requis']) : '[]';
     return $stmt->execute([
         $data['nom'],
-        $data['description'] ?? null,
+        $data['type_tournee'] ?? null,
         $data['zone_geo'] ?? null,
         $data['type_vehicule'] ?? null,
+        $permisJson,
         $data['difficulte'] ?? 1,
         $data['duree'] ?? 'journee',
         $id
@@ -225,8 +240,77 @@ function getAttribution($date, $periode, $tourneeId) {
     return $stmt->fetch();
 }
 
+function getConducteurAttribution($conducteurId, $date, $periode) {
+    $pdo = Database::getInstance();
+    $sql = "SELECT * FROM " . DB_PREFIX . "planning
+            WHERE date = ? AND periode = ? AND conducteur_id = ?";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$date, $periode, $conducteurId]);
+    return $stmt->fetch();
+}
+
 function addAttribution($d) {
     $pdo = Database::getInstance();
+    
+    // VALIDATION : Vérifier que le conducteur possède le permis requis
+    if (!empty($d['conducteur_id'])) {
+        $conducteur = getConducteur($d['conducteur_id']);
+        $tournee = getTournee($d['tournee_id']);
+        
+        if ($conducteur && $tournee) {
+            // Récupérer les permis requis de la tournée
+            $permisRequis = is_array($tournee['permis_requis']) 
+                ? $tournee['permis_requis'] 
+                : json_decode($tournee['permis_requis'] ?? '[]', true);
+            
+            // Normaliser les permis requis en array
+            if (!is_array($permisRequis)) {
+                $permisRequis = [$permisRequis];
+            }
+            
+            // Récupérer les permis du conducteur et les normaliser en array
+            $permisConducteur = $conducteur['permis'];
+            
+            // Si c'est une string JSON, la décoder
+            if (is_string($permisConducteur)) {
+                // Essayer de décoder comme JSON
+                $decoded = json_decode($permisConducteur, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $permisConducteur = $decoded;
+                } else {
+                    // Sinon, split par virgule (ancien format)
+                    $permisConducteur = explode(',', $permisConducteur);
+                }
+            }
+            
+            // S'assurer que c'est bien un array
+            if (!is_array($permisConducteur)) {
+                $permisConducteur = [$permisConducteur];
+            }
+            
+            // Nettoyer les espaces
+            $permisConducteur = array_map('trim', $permisConducteur);
+            
+            // Vérifier si le conducteur a AU MOINS UN des permis requis
+            if (!empty($permisRequis)) {
+                $aPermisValide = false;
+                foreach ($permisRequis as $permisReq) {
+                    if (in_array(trim($permisReq), $permisConducteur)) {
+                        $aPermisValide = true;
+                        break;
+                    }
+                }
+                
+                if (!$aPermisValide) {
+                    throw new Exception(
+                        "Le conducteur {$conducteur['prenom']} {$conducteur['nom']} ne possède pas le(s) permis requis pour cette tournée. " .
+                        "Permis requis : " . implode(', ', $permisRequis) . ". " .
+                        "Permis du conducteur : " . implode(', ', $permisConducteur) . "."
+                    );
+                }
+            }
+        }
+    }
     
     // CORRECTION 1 : Supprime TOUTES les anciennes attributions du conducteur à cette date/période
     if (!empty($d['conducteur_id'])) {
@@ -276,6 +360,35 @@ function deleteAttribution($id) {
     return $stmt->execute([$id]);
 }
 
+function updateAttribution($id, $data) {
+    $pdo = Database::getInstance();
+    
+    $fields = [];
+    $params = [];
+    
+    if (array_key_exists('conducteur_id', $data)) {
+        $fields[] = "conducteur_id = ?";
+        $params[] = $data['conducteur_id'];
+    }
+    if (array_key_exists('score_ia', $data)) {
+        $fields[] = "score_ia = ?";
+        $params[] = $data['score_ia'];
+    }
+    if (isset($data['statut'])) {
+        $fields[] = "statut = ?";
+        $params[] = $data['statut'];
+    }
+    
+    if (empty($fields)) {
+        return false;
+    }
+    
+    $params[] = $id;
+    $sql = "UPDATE " . DB_PREFIX . "planning SET " . implode(', ', $fields) . " WHERE id = ?";
+    $stmt = $pdo->prepare($sql);
+    return $stmt->execute($params);
+}
+
 // ==================== ALGORITHME IA ====================
 
 function calculerScoreConducteur($conducteurId, $tourneeId, $date, $periode) {
@@ -286,37 +399,60 @@ function calculerScoreConducteur($conducteurId, $tourneeId, $date, $periode) {
         return ['score' => 0, 'details' => 'Conducteur ou tournée introuvable', 'disponible' => false];
     }
     
-    // Vérifier disponibilité (bloquant)
+    // VÉRIFICATION 1 : Permis requis (BLOQUANT)
+    $permisRequis = json_decode($tournee['permis_requis'] ?? '[]', true);
+    $permisConducteur = json_decode($conducteur['permis'] ?? '[]', true);
+    
+    // Si la tournée nécessite des permis spécifiques
+    if (!empty($permisRequis)) {
+        // Vérifier si le conducteur a au moins un des permis requis
+        $hasPermis = false;
+        foreach ($permisConducteur as $permis) {
+            if (in_array($permis, $permisRequis)) {
+                $hasPermis = true;
+                break;
+            }
+        }
+        
+        if (!$hasPermis) {
+            $permisManquants = implode(', ', $permisRequis);
+            return ['score' => 0, 'details' => "❌ Permis requis : $permisManquants", 'disponible' => false];
+        }
+    }
+    
+    // VÉRIFICATION 2 : Disponibilité (BLOQUANT)
     $disponible = verifierDisponibilite($conducteur, $date, $periode);
     if (!$disponible['disponible']) {
         return ['score' => 0, 'details' => "❌ " . $disponible['raison'], 'disponible' => false];
     }
     
     // Récupérer les critères configurables
-    $poidsTitulaire = getConfig('poids_titulaire') ?: 100;
     $poidsConnaissance = getConfig('poids_connaissance') ?: 80;
-    $poidsExperience = getConfig('poids_experience') ?: 4;
+    $poidsExperience = getConfig('poids_experience') ?: 2;
     $poidsDisponibilite = getConfig('poids_disponibilite') ?: 60;
     $penaliteInterimaire = getConfig('penalite_interimaire') ?: -50;
     
     $score = 0;
     $details = [];
     
-    // 1. Conducteur titulaire
-    if ($conducteur['tournee_titulaire'] == $tourneeId) {
-        $score += $poidsTitulaire;
-        $details[] = "Titulaire (+{$poidsTitulaire})";
+    // 1. Conducteur titulaire (bonus automatique + ajoute la tournée aux maîtrisées si manquant)
+    $estTitulaire = ($conducteur['tournee_titulaire'] == $tourneeId);
+    if ($estTitulaire) {
+        $score += $poidsConnaissance; // Titulaire = maîtrise automatique
+        $details[] = "⭐ Titulaire (+{$poidsConnaissance})";
     }
     
-    // 2. Tournée maîtrisée
-    $tourneesMaitrisees = json_decode($conducteur['tournees_maitrisees'] ?? '[]', true);
-    if (in_array($tourneeId, $tourneesMaitrisees)) {
-        $score += $poidsConnaissance;
-        $details[] = "Maîtrise (+{$poidsConnaissance})";
+    // 2. Tournée maîtrisée (seulement si pas déjà compté comme titulaire)
+    if (!$estTitulaire) {
+        $tourneesMaitrisees = json_decode($conducteur['tournees_maitrisees'] ?? '[]', true);
+        if (in_array($tourneeId, $tourneesMaitrisees)) {
+            $score += $poidsConnaissance;
+            $details[] = "Maîtrise (+{$poidsConnaissance})";
+        }
     }
     
-    // 3. Expérience
-    $pointsExp = min(40, (int)$conducteur['experience'] * $poidsExperience);
+    // 3. Expérience (maximum 100 points pour 40 ans)
+    $pointsExp = min(100, (int)$conducteur['experience'] * $poidsExperience);
     $score += $pointsExp;
     $details[] = "Exp. {$conducteur['experience']} ans (+{$pointsExp})";
     
@@ -334,7 +470,8 @@ function calculerScoreConducteur($conducteurId, $tourneeId, $date, $periode) {
     }
     
     // Score final normalisé sur 100
-    $scoreMax = $poidsTitulaire + $poidsConnaissance + 40 + $poidsDisponibilite + 10;
+    // scoreMax = Connaissance + Expérience max (100) + Disponibilité + CDI bonus (10)
+    $scoreMax = $poidsConnaissance + 100 + $poidsDisponibilite + 10;
     $scoreFinal = max(0, min(100, round($score * 100 / $scoreMax)));
     
     return [
@@ -360,11 +497,11 @@ function verifierDisponibilite($conducteur, $date, $periode) {
     // Vérifier repos récurrents avec semaines paires/impaires
     if (!empty($conducteur['repos_recurrents'])) {
         $repos = json_decode($conducteur['repos_recurrents'], true);
-        $jourSemaine = date('N', strtotime($date));
-        $numeroSemaine = date('W', strtotime($date));
+        $jourSemaine = (int)date('N', strtotime($date)); // Convertir en entier
+        $numeroSemaine = (int)date('W', strtotime($date));
         $estSemainePaire = ($numeroSemaine % 2 === 0);
         
-        if (isset($repos['jours']) && in_array($jourSemaine, $repos['jours'])) {
+        if (isset($repos['jours']) && in_array($jourSemaine, $repos['jours'], false)) {
             $typeRepos = $repos['type'] ?? 'toutes';
             
             if ($typeRepos === 'toutes') {
@@ -449,6 +586,53 @@ function getScorePerformanceGlobal($dateDebut, $dateFin) {
         'score_moyen' => round($scoreMoyen, 1),
         'bonus_qualite' => round($bonusQualite / $nbAttributions * 10, 1)
     ];
+}
+
+function getTauxOccupation($dateDebut, $dateFin) {
+    try {
+        $pdo = Database::getInstance();
+        
+        // Calculer le nombre de jours dans la période
+        $debut = new DateTime($dateDebut);
+        $fin = new DateTime($dateFin);
+        $interval = $debut->diff($fin);
+        $nbJours = $interval->days + 1;
+        
+        // Compter les tournées actives
+        $nbTournees = $pdo->query("SELECT COUNT(*) FROM " . DB_PREFIX . "tournees")->fetchColumn();
+        
+        if ($nbTournees == 0 || $nbJours == 0) {
+            return 0;
+        }
+        
+        // Total de cases possibles (chaque tournée, chaque jour, 2 périodes)
+        $totalCases = $nbTournees * $nbJours * 2;
+        
+        // Compter UNIQUEMENT les cases réellement remplies (avec un conducteur attribué)
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM " . DB_PREFIX . "planning 
+            WHERE date BETWEEN ? AND ? 
+            AND conducteur_id IS NOT NULL
+        ");
+        $stmt->execute([$dateDebut, $dateFin]);
+        $casesRemplies = (int)$stmt->fetchColumn();
+        
+        if ($totalCases === 0) {
+            return 0;
+        }
+        
+        $taux = round(($casesRemplies / $totalCases) * 100, 1);
+        
+        // Log pour debug
+        error_log("Taux occupation: $casesRemplies cases remplies / $totalCases total = $taux%");
+        
+        return $taux;
+        
+    } catch (Exception $e) {
+        error_log("Erreur getTauxOccupation: " . $e->getMessage());
+        return 0;
+    }
 }
 
 // ==================== CONFIGURATION ====================
@@ -555,6 +739,15 @@ function getStatistiques() {
     $stmt->execute([$debutSemaine, $finSemaine]);
     $stats['attributions_semaine'] = $stmt->fetchColumn();
     
+    // Calculer le taux d'occupation de la semaine en cours
+    try {
+        $stats['taux_occupation'] = getTauxOccupation($debutSemaine, $finSemaine);
+        error_log("Taux occupation calculé: " . $stats['taux_occupation']);
+    } catch (Exception $e) {
+        error_log("Erreur calcul taux occupation: " . $e->getMessage());
+        $stats['taux_occupation'] = 0;
+    }
+    
     return $stats;
 }
 
@@ -565,14 +758,77 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
     $conducteurs = getConducteurs();
     $succes = 0;
     $echecs = 0;
+    $logs = []; // Pour diagnostiquer
     
     $dateActuelle = new DateTime($dateDebut);
     $dateLimite = new DateTime($dateFin);
     
     while ($dateActuelle <= $dateLimite) {
         $dateStr = $dateActuelle->format('Y-m-d');
+        $logs[] = "\n=== DATE: $dateStr ===";
         
+        // ==================== PHASE 1 : ATTRIBUER TOUS LES TITULAIRES ====================
+        $logs[] = "PHASE 1: Titulaires";
         foreach ($tournees as $tournee) {
+            // Trouver le conducteur titulaire de cette tournée
+            $titulaire = null;
+            foreach ($conducteurs as $conducteur) {
+                if ($conducteur['tournee_titulaire'] == $tournee['id']) {
+                    $titulaire = $conducteur;
+                    break;
+                }
+            }
+            
+            // Si pas de titulaire, passer à la tournée suivante
+            if (!$titulaire) {
+                $logs[] = "  [{$tournee['nom']}] Pas de titulaire";
+                continue;
+            }
+            
+            $logs[] = "  [{$tournee['nom']}] Titulaire: {$titulaire['prenom']} {$titulaire['nom']}";
+            
+            // VÉRIFICATION DES PERMIS DU TITULAIRE
+            $permisRequis = is_array($tournee['permis_requis']) 
+                ? $tournee['permis_requis'] 
+                : json_decode($tournee['permis_requis'] ?? '[]', true);
+            if (!is_array($permisRequis)) {
+                $permisRequis = [$permisRequis];
+            }
+            
+            if (!empty($permisRequis)) {
+                $permisTitulaire = $titulaire['permis'];
+                
+                // Normaliser les permis du titulaire
+                if (is_string($permisTitulaire)) {
+                    $decoded = json_decode($permisTitulaire, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        $permisTitulaire = $decoded;
+                    } else {
+                        $permisTitulaire = explode(',', $permisTitulaire);
+                    }
+                }
+                if (!is_array($permisTitulaire)) {
+                    $permisTitulaire = [$permisTitulaire];
+                }
+                $permisTitulaire = array_map('trim', $permisTitulaire);
+                
+                // Vérifier si le titulaire possède au moins un permis requis
+                $aPermisValide = false;
+                foreach ($permisRequis as $permisReq) {
+                    if (in_array(trim($permisReq), $permisTitulaire)) {
+                        $aPermisValide = true;
+                        break;
+                    }
+                }
+                
+                // Si le titulaire n'a pas le bon permis, on le saute
+                if (!$aPermisValide) {
+                    $logs[] = "    ❌ Permis invalide (requis: " . implode(',', $permisRequis) . ", a: " . implode(',', $permisTitulaire) . ")";
+                    continue;
+                }
+            }
+            
+            // Déterminer les périodes de la tournée
             $periodes = [];
             if ($tournee['duree'] === 'matin' || $tournee['duree'] === 'journee') {
                 $periodes[] = 'matin';
@@ -582,14 +838,113 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
             }
             
             foreach ($periodes as $periode) {
+                // Vérifier si la tournée n'est pas déjà attribuée
                 if (getAttribution($dateStr, $periode, $tournee['id'])) {
+                    $logs[] = "    [{$periode}] Déjà attribué";
                     continue;
                 }
                 
+                // Vérifier si le titulaire n'est pas déjà attribué ailleurs
+                $dejaAttribue = getConducteurAttribution($titulaire['id'], $dateStr, $periode);
+                if ($dejaAttribue) {
+                    $logs[] = "    [{$periode}] Titulaire déjà occupé ailleurs";
+                    continue; // Le titulaire est déjà occupé sur une autre tournée
+                }
+                
+                // Vérifier la disponibilité du titulaire
+                $resultat = calculerScoreConducteur($titulaire['id'], $tournee['id'], $dateStr, $periode);
+                if ($resultat['disponible']) {
+                    addAttribution([
+                        'date' => $dateStr,
+                        'periode' => $periode,
+                        'conducteur_id' => $titulaire['id'],
+                        'tournee_id' => $tournee['id'],
+                        'score_ia' => $resultat['score']
+                    ]);
+                    $logs[] = "    [{$periode}] ✅ Attribué (score: {$resultat['score']})";
+                    $succes++;
+                } else {
+                    $logs[] = "    [{$periode}] ❌ Non disponible: {$resultat['details']}";
+                }
+            }
+        }
+        
+        // ==================== PHASE 2 : COMPLÉTER AVEC REMPLAÇANTS ====================
+        $logs[] = "\nPHASE 2: Remplaçants";
+        foreach ($tournees as $tournee) {
+            $logs[] = "  [{$tournee['nom']}]";
+            $periodes = [];
+            if ($tournee['duree'] === 'matin' || $tournee['duree'] === 'journee') {
+                $periodes[] = 'matin';
+            }
+            if ($tournee['duree'] === 'apres-midi' || $tournee['duree'] === 'journee') {
+                $periodes[] = 'apres-midi';
+            }
+            
+            foreach ($periodes as $periode) {
+                // Si déjà attribué (par un titulaire en phase 1), passer
+                if (getAttribution($dateStr, $periode, $tournee['id'])) {
+                    $logs[] = "    [{$periode}] Déjà attribué (titulaire)";
+                    continue;
+                }
+                
+                // Chercher le meilleur remplaçant disponible
                 $meilleurScore = -1;
                 $meilleurConducteur = null;
                 
+                // Récupérer les permis requis pour cette tournée
+                $permisRequis = is_array($tournee['permis_requis']) 
+                    ? $tournee['permis_requis'] 
+                    : json_decode($tournee['permis_requis'] ?? '[]', true);
+                if (!is_array($permisRequis)) {
+                    $permisRequis = [$permisRequis];
+                }
+                
                 foreach ($conducteurs as $conducteur) {
+                    // RÈGLE STRICTE : Ne JAMAIS prendre un conducteur titulaire pour une autre tournée
+                    if ($conducteur['tournee_titulaire'] && $conducteur['tournee_titulaire'] != $tournee['id']) {
+                        continue; // Ce conducteur est titulaire d'une autre tournée, on ne le prend pas
+                    }
+                    
+                    // VÉRIFICATION DES PERMIS : Le conducteur doit avoir AU MOINS UN des permis requis
+                    if (!empty($permisRequis)) {
+                        $permisConducteur = $conducteur['permis'];
+                        
+                        // Normaliser les permis du conducteur
+                        if (is_string($permisConducteur)) {
+                            $decoded = json_decode($permisConducteur, true);
+                            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                                $permisConducteur = $decoded;
+                            } else {
+                                $permisConducteur = explode(',', $permisConducteur);
+                            }
+                        }
+                        if (!is_array($permisConducteur)) {
+                            $permisConducteur = [$permisConducteur];
+                        }
+                        $permisConducteur = array_map('trim', $permisConducteur);
+                        
+                        // Vérifier si le conducteur possède au moins un permis requis
+                        $aPermisValide = false;
+                        foreach ($permisRequis as $permisReq) {
+                            if (in_array(trim($permisReq), $permisConducteur)) {
+                                $aPermisValide = true;
+                                break;
+                            }
+                        }
+                        
+                        // Si le conducteur n'a pas le bon permis, on le saute
+                        if (!$aPermisValide) {
+                            continue;
+                        }
+                    }
+                    
+                    // Vérifier si le conducteur n'est pas déjà attribué à cette période
+                    $dejaAttribue = getConducteurAttribution($conducteur['id'], $dateStr, $periode);
+                    if ($dejaAttribue) {
+                        continue;
+                    }
+                    
                     $resultat = calculerScoreConducteur($conducteur['id'], $tournee['id'], $dateStr, $periode);
                     
                     if (!$resultat['disponible']) {
@@ -610,8 +965,10 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
                         'tournee_id' => $tournee['id'],
                         'score_ia' => $meilleurScore
                     ]);
+                    $logs[] = "    [{$periode}] ✅ Remplaçant: {$meilleurConducteur['prenom']} {$meilleurConducteur['nom']} (score: $meilleurScore)";
                     $succes++;
                 } else {
+                    $logs[] = "    [{$periode}] ❌ Aucun remplaçant trouvé";
                     $echecs++;
                 }
             }
@@ -620,5 +977,8 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
         $dateActuelle->modify('+1 day');
     }
     
-    return ['succes' => $succes, 'echecs' => $echecs];
+    // Écrire les logs dans un fichier pour diagnostic
+    file_put_contents(__DIR__ . '/ia_debug.log', implode("\n", $logs));
+    
+    return ['succes' => $succes, 'echecs' => $echecs, 'logs' => $logs];
 }

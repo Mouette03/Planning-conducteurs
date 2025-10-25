@@ -1,0 +1,30 @@
+# Fichiers de configuration sensibles
+config.php
+
+# Fichiers temporaires de test
+.tmp_*
+*.tmp
+
+# Dossier FPDF (auto-téléchargé)
+fpdf/
+
+# Logos uploadés
+uploads/
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Backups
+*.bak
+*.backup
+*~

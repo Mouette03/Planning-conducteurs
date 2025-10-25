@@ -1,4 +1,5 @@
-// Gestion des utilisateurs
+// ==================== UTILISATEURS ====================
+
 async function chargerUtilisateurs() {
     // Ne charger que si l'utilisateur est admin
     if (!document.getElementById('utilisateurs-tab')) return;
@@ -130,6 +131,8 @@ async function supprimerUtilisateur(id) {
         showToast('Erreur', 'Impossible de supprimer l\'utilisateur', 'danger');
     }
 }
+
+// ==================== PROFIL UTILISATEUR ====================
 
 // Fonction pour mettre à jour son propre profil
 async function afficherModalProfil() {

@@ -11,8 +11,15 @@ const AppState = {
     selectedPeriod: {
         debut: null,
         fin: null
-    }
+    },
+    currentWeekOffset: 0, // Pour la navigation semaine par semaine
+    planningFullData: [] // Stocke toutes les données du planning
 };
+
+// Variables globales (alias vers AppState pour rétro-compatibilité)
+let conducteurs = AppState.conducteurs;
+let tournees = AppState.tournees;
+let config = AppState.config;
 
 // Gestionnaire d'état et de cache
 class StateManager {
@@ -62,6 +69,9 @@ async function initApp() {
             chargerConfig(),
             chargerUtilisateurs() // Chargement des utilisateurs si admin
         ]);
+        
+        // Charger le score de performance dans le header
+        await updateScoreHeader();
     } catch (e) {
         console.error('Init error', e);
         showToast('Erreur', 'Impossible de charger les données', 'danger');
@@ -160,15 +170,20 @@ function getSunday() {
 async function chargerStats() {
     try {
         const { data } = await apiCall('get_stats');
+        console.log('Stats reçues:', data); // Debug
         document.getElementById('stat-conducteurs').textContent = data.conducteurs || 0;
         document.getElementById('stat-tournees').textContent = data.tournees || 0;
-        document.getElementById('stat-semaine').textContent = data.attributions_semaine || 0;
+        document.getElementById('stat-taux-occupation').textContent = `${data.taux_occupation || 0}%`;
+        console.log('Taux occupation:', data.taux_occupation); // Debug
         
         // Score de performance global du planning
         const scoreRes = await apiCall(`get_score_global&debut=${getMonday()}&fin=${getSunday()}`);
         if (scoreRes.success && scoreRes.data) {
             const score = scoreRes.data.score_global;
             document.getElementById('stat-score-ia').textContent = `${score}%`;
+            
+            // Mettre à jour aussi le badge dans le header
+            updateScoreHeader(score);
             
             // Changer la couleur selon le score
             const statCard = document.getElementById('stat-score-ia').closest('.stat-card');
@@ -183,11 +198,51 @@ async function chargerStats() {
     }
 }
 
+// Fonction pour mettre à jour le score de performance dans le header
+async function updateScoreHeader(score = null) {
+    try {
+        if (score === null) {
+            const scoreRes = await apiCall(`get_score_global&debut=${getMonday()}&fin=${getSunday()}`);
+            if (scoreRes.success && scoreRes.data) {
+                score = scoreRes.data.score_global;
+            }
+        }
+        
+        if (score !== null) {
+            const scoreValue = document.getElementById('score-performance-value');
+            const scoreBadge = document.getElementById('score-performance-header');
+            
+            if (scoreValue) {
+                scoreValue.textContent = score;
+            }
+            
+            if (scoreBadge) {
+                // Changer la couleur du badge selon le score
+                scoreBadge.className = 'badge me-3';
+                if (score >= 80) {
+                    scoreBadge.classList.add('bg-success', 'text-white');
+                } else if (score >= 60) {
+                    scoreBadge.classList.add('bg-info', 'text-white');
+                } else if (score >= 40) {
+                    scoreBadge.classList.add('bg-warning', 'text-dark');
+                } else {
+                    scoreBadge.classList.add('bg-danger', 'text-white');
+                }
+                scoreBadge.style.fontSize = '0.85rem';
+                scoreBadge.style.padding = '0.5rem 0.75rem';
+            }
+        }
+    } catch (error) {
+        console.error('Erreur mise à jour score header:', error);
+    }
+}
+
 // ==================== CONDUCTEURS ====================
 async function chargerConducteurs() {
     try {
         const { data } = await apiCall('get_conducteurs');
-        conducteurs = data || [];
+        AppState.conducteurs = data || [];
+        conducteurs = AppState.conducteurs; // Mise à jour de la variable globale
         await renderConducteurs();
     } catch (e) {
         console.error('Conducteurs error', e);
@@ -201,6 +256,15 @@ async function renderConducteurs() {
     if (conducteurs.length === 0) {
         container.innerHTML = '<div class="col-12 text-center text-muted">Aucun conducteur</div>';
         return;
+    }
+    
+    // Peupler le select d'export RGPD
+    const selectRGPD = document.getElementById('conducteur-export-rgpd');
+    if (selectRGPD) {
+        selectRGPD.innerHTML = '<option value="">-- Choisir un conducteur --</option>';
+        conducteurs.forEach(c => {
+            selectRGPD.innerHTML += `<option value="${c.id}">${c.prenom} ${c.nom}</option>`;
+        });
     }
 
     container.innerHTML = '';
@@ -271,14 +335,32 @@ function afficherModalConducteur(id=null) {
                 <label class="form-label">Nom *</label>
                 <input id="c-nom" class="form-control" value="${c.nom || ''}" required>
             </div>
-            <div class="col-md-6 mb-3">
-                <label class="form-label">Permis *</label>
-                <select id="c-permis" class="form-select" required>
-                    <option value="">Sélectionner...</option>
-                    ${(config.types_permis || ['B','C','C+E','D','EC']).map(p => 
-                        `<option value="${p}" ${c.permis===p?'selected':''}>${p}</option>`
-                    ).join('')}
-                </select>
+            <div class="col-md-12 mb-3">
+                <label class="form-label">Permis détenus *</label>
+                <div id="c-permis-container" class="border rounded p-2">
+                    ${(config.types_permis || ['B','C','C+E','D','EC']).map(p => {
+                        // Parse JSON string if needed
+                        let permisArray = [];
+                        if (typeof c.permis === 'string' && c.permis.startsWith('[')) {
+                            try {
+                                permisArray = JSON.parse(c.permis);
+                            } catch(e) {
+                                permisArray = c.permis ? [c.permis] : [];
+                            }
+                        } else if (Array.isArray(c.permis)) {
+                            permisArray = c.permis;
+                        } else if (c.permis) {
+                            permisArray = [c.permis];
+                        }
+                        const checked = permisArray.includes(p) ? 'checked' : '';
+                        return `<div class="form-check form-check-inline">
+                            <input class="form-check-input permis-checkbox" type="checkbox" 
+                                   id="permis-${p}" value="${p}" ${checked}>
+                            <label class="form-check-label" for="permis-${p}">${p}</label>
+                        </div>`;
+                    }).join('')}
+                </div>
+                <small class="text-muted">Sélectionner tous les permis que le conducteur possède</small>
             </div>
             <div class="col-md-6 mb-3">
                 <label class="form-label">Contact</label>
@@ -300,6 +382,15 @@ function afficherModalConducteur(id=null) {
         </div>
         <hr>
         <div class="mb-3">
+            <label class="form-label"><i class="bi bi-star me-2"></i>Tournée titulaire</label>
+            <select id="c-titulaire" class="form-select">
+                <option value="">Aucune</option>
+                ${tournees.map(t => 
+                    `<option value="${t.id}" ${c.tournee_titulaire==t.id?'selected':''}>${t.nom}</option>`
+                ).join('')}
+            </select>
+        </div>
+        <div class="mb-3">
             <label class="form-label"><i class="bi bi-geo-alt me-2"></i>Tournées maîtrisées</label>
             <div id="c-tournees-maitrisees" class="border rounded p-2" style="max-height:150px; overflow-y:auto;">
                 ${tournees.map(t => `
@@ -310,15 +401,6 @@ function afficherModalConducteur(id=null) {
                     </div>
                 `).join('')}
             </div>
-        </div>
-        <div class="mb-3">
-            <label class="form-label"><i class="bi bi-star me-2"></i>Tournée titulaire</label>
-            <select id="c-titulaire" class="form-select">
-                <option value="">Aucune</option>
-                ${tournees.map(t => 
-                    `<option value="${t.id}" ${c.tournee_titulaire==t.id?'selected':''}>${t.nom}</option>`
-                ).join('')}
-            </select>
         </div>
         <hr>
         <div class="mb-3">
@@ -466,11 +548,22 @@ async function sauvegarderConducteur() {
     
     const statutTemp = document.getElementById('c-statut-temp').value;
     const statutTempFin = document.getElementById('c-statut-temp-fin').value;
+    
+    // Récupérer les permis cochés
+    const permisSelectionnes = [];
+    document.querySelectorAll('.permis-checkbox:checked').forEach(cb => {
+        permisSelectionnes.push(cb.value);
+    });
+    
+    if (permisSelectionnes.length === 0) {
+        showToast('Attention', 'Sélectionner au moins un permis', 'warning');
+        return;
+    }
 
     const data = {
         prenom: document.getElementById('c-prenom').value,
         nom: document.getElementById('c-nom').value,
-        permis: document.getElementById('c-permis').value,
+        permis: permisSelectionnes,
         contact: document.getElementById('c-contact').value,
         experience: +document.getElementById('c-exp').value,
         statut_entreprise: document.getElementById('c-statut').value,
@@ -507,7 +600,8 @@ async function supprimerConducteur(id) {
 async function chargerTournees() {
     try {
         const { data } = await apiCall('get_tournees');
-        tournees = data || [];
+        AppState.tournees = data || [];
+        tournees = AppState.tournees; // Mise à jour de la variable globale
         renderTournees();
     } catch (e) {
         console.error('Tournees error', e);
@@ -554,11 +648,38 @@ function afficherModalTournee(id=null) {
     
     title.textContent = id ? 'Modifier la tournée' : 'Ajouter une tournée';
     
+    // Parser les permis requis (peut être string JSON ou array)
+    let permisRequis = [];
+    if (t.permis_requis) {
+        if (typeof t.permis_requis === 'string' && t.permis_requis.startsWith('[')) {
+            try {
+                permisRequis = JSON.parse(t.permis_requis);
+            } catch(e) {
+                console.error('Erreur parsing permis_requis:', e);
+                permisRequis = [];
+            }
+        } else if (Array.isArray(t.permis_requis)) {
+            permisRequis = t.permis_requis;
+        }
+    }
+    
     form.innerHTML = `
         <input type="hidden" id="t-id" value="${t.id || ''}">
         <div class="mb-3">
             <label class="form-label">Nom *</label>
             <input id="t-nom" class="form-control" value="${t.nom || ''}" required>
+        </div>
+        <div class="row">
+            <div class="col-md-12 mb-3">
+                <label class="form-label">Type de tournée</label>
+                <select id="t-type" class="form-select">
+                    <option value="">-- Sélectionner --</option>
+                    ${(config.types_tournee || []).sort((a,b) => a.ordre - b.ordre).map(type => 
+                        `<option value="${type.nom}" ${t.type_tournee===type.nom?'selected':''}>${type.nom} (ordre ${type.ordre})</option>`
+                    ).join('')}
+                </select>
+                <small class="text-muted">L'ordre d'affichage dans le planning est automatiquement déterminé par le type - Configurez les types dans l'onglet Paramètres</small>
+            </div>
         </div>
         <div class="mb-3">
             <label class="form-label">Zone géographique</label>
@@ -566,7 +687,27 @@ function afficherModalTournee(id=null) {
         </div>
         <div class="mb-3">
             <label class="form-label">Type de véhicule</label>
-            <input id="t-veh" class="form-control" value="${t.type_vehicule || ''}">
+            <select id="t-veh" class="form-select">
+                <option value="">-- Sélectionner --</option>
+                ${(config.types_vehicules || ['7.5T','12T','19T','26T']).map(v => 
+                    `<option value="${v}" ${t.type_vehicule===v?'selected':''}>${v}</option>`
+                ).join('')}
+            </select>
+            <small class="text-muted">Configurez les types de véhicules dans l'onglet Paramètres</small>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Permis requis *</label>
+            <div id="t-permis-container" class="border rounded p-2">
+                ${(config.types_permis || ['B','C','C+E','D','EC']).map(p => {
+                    const checked = permisRequis.includes(p) ? 'checked' : '';
+                    return `<div class="form-check form-check-inline">
+                        <input class="form-check-input permis-tournee-checkbox" type="checkbox" 
+                               id="tournee-permis-${p}" value="${p}" ${checked}>
+                        <label class="form-check-label" for="tournee-permis-${p}">${p}</label>
+                    </div>`;
+                }).join('')}
+            </div>
+            <small class="text-muted">Permis acceptés pour cette tournée (un conducteur doit avoir au moins un de ces permis)</small>
         </div>
         <div class="mb-3">
             <label class="form-label">Difficulté (1-5)</label>
@@ -586,13 +727,29 @@ function afficherModalTournee(id=null) {
 
 async function sauvegarderTournee() {
     const id = document.getElementById('t-id').value;
+    
+    // Récupérer les permis requis cochés
+    const permisRequis = [];
+    document.querySelectorAll('.permis-tournee-checkbox:checked').forEach(cb => {
+        permisRequis.push(cb.value);
+    });
+    
+    if (permisRequis.length === 0) {
+        showToast('Attention', 'Sélectionner au moins un permis requis', 'warning');
+        return;
+    }
+    
     const data = {
         nom: document.getElementById('t-nom').value,
+        type_tournee: document.getElementById('t-type').value || null,
         zone_geo: document.getElementById('t-zone').value,
         type_vehicule: document.getElementById('t-veh').value,
+        permis_requis: permisRequis,
         difficulte: +document.getElementById('t-diff').value,
         duree: document.getElementById('t-duree').value
     };
+    
+    console.log('Données à enregistrer:', data);
     
     try {
         if (id) {
@@ -604,7 +761,8 @@ async function sauvegarderTournee() {
         chargerTournees();
         bootstrap.Modal.getInstance(document.getElementById('modalTournee')).hide();
     } catch (error) {
-        console.error('Erreur sauvegarde:', error);
+        console.error('Erreur sauvegarde tournee:', error);
+        showToast('Erreur', error.message || 'Impossible d\'enregistrer la tournée', 'danger');
     }
 }
 
@@ -625,12 +783,74 @@ async function chargerPlanning() {
         return;
     }
     
+    // Sauvegarder la période sélectionnée
+    AppState.selectedPeriod.debut = debut;
+    AppState.selectedPeriod.fin = fin;
+    AppState.currentWeekOffset = 0;
+    
     try {
         const { data } = await apiCall(`get_planning&debut=${debut}&fin=${fin}`);
-        renderPlanning(data || [], debut, fin);
+        AppState.planningFullData = data || [];
+        renderPlanningWithNavigation();
+        
+        // Mettre à jour le score de performance dans le header
+        await updateScoreHeader();
     } catch (error) {
         console.error('Erreur planning:', error);
     }
+}
+
+// Navigation semaine par semaine
+function naviguerSemaine(direction) {
+    AppState.currentWeekOffset += direction;
+    renderPlanningWithNavigation();
+}
+
+function renderPlanningWithNavigation() {
+    const debut = AppState.selectedPeriod.debut;
+    const fin = AppState.selectedPeriod.fin;
+    
+    if (!debut || !fin) return;
+    
+    const debutDate = new Date(debut);
+    const finDate = new Date(fin);
+    
+    // Calculer toutes les semaines dans la période
+    const semaines = [];
+    let currentWeekStart = new Date(debutDate);
+    
+    while (currentWeekStart <= finDate) {
+        const weekEnd = new Date(currentWeekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        
+        semaines.push({
+            debut: new Date(currentWeekStart),
+            fin: weekEnd > finDate ? new Date(finDate) : weekEnd
+        });
+        
+        currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+    }
+    
+    // Vérifier que l'offset est valide
+    if (AppState.currentWeekOffset < 0) AppState.currentWeekOffset = 0;
+    if (AppState.currentWeekOffset >= semaines.length) AppState.currentWeekOffset = semaines.length - 1;
+    
+    // Obtenir la semaine à afficher
+    const semaineAffichee = semaines[AppState.currentWeekOffset];
+    
+    // Mettre à jour l'affichage de la semaine
+    const semaineNum = AppState.currentWeekOffset + 1;
+    document.getElementById('semaine-affichee').textContent = 
+        `Semaine ${semaineNum} / ${semaines.length}`;
+    document.getElementById('periode-affichee').textContent = 
+        `Du ${semaineAffichee.debut.toLocaleDateString('fr-FR')} au ${semaineAffichee.fin.toLocaleDateString('fr-FR')}`;
+    
+    // Afficher le planning pour cette semaine
+    renderPlanning(
+        AppState.planningFullData, 
+        semaineAffichee.debut.toISOString().split('T')[0], 
+        semaineAffichee.fin.toISOString().split('T')[0]
+    );
 }
 
 function renderPlanning(data, debut, fin) {
@@ -661,6 +881,10 @@ function renderPlanning(data, debut, fin) {
             
             if (t.duree === 'journee' || t.duree === 'apres-midi') {
                 const attrAM = data.find(x => x.date === dateStr && x.periode === 'apres-midi' && x.tournee_id == t.id);
+                // Ajouter un petit espace si c'est une journée complète
+                if (t.duree === 'journee') {
+                    html += '<div style="height: 3px;"></div>';
+                }
                 html += createCellContent(t, attrAM, dateStr, 'apres-midi');
             }
             
@@ -677,7 +901,8 @@ function createCellContent(tournee, attr, date, periode) {
     let scoreDisplay = '';
     let cellClass = 'bg-light';
     
-    if (attr && attr.score_ia !== undefined) {
+    // N'afficher le score que si un conducteur est attribué
+    if (attr && attr.conducteur_id && attr.score_ia !== undefined) {
         const score = Math.round(attr.score_ia);
         
         if (score >= 80) cellClass = 'bg-success bg-opacity-25';
@@ -694,14 +919,21 @@ function createCellContent(tournee, attr, date, periode) {
         scoreDisplay = `<div class="mt-1">
             <span class="badge ${badgeClass} small">${score}/100</span>
         </div>`;
+    } else {
+        // Espace réservé pour maintenir la hauteur constante
+        scoreDisplay = `<div class="mt-1" style="height: 20px;">
+            <span class="badge bg-secondary small invisible">0/100</span>
+        </div>`;
     }
     
-    return `<div class="mb-1 p-2 rounded ${cellClass} planning-cell">
-        <small class="text-muted d-block">${periode === 'matin' ? '🌅 Matin' : '🌆 Après-midi'}</small>
+    return `<div class="p-1 rounded ${cellClass} planning-cell">
+        <small class="text-muted d-block" style="font-size: 0.7rem; line-height: 1;">${periode === 'matin' ? '🌅 Matin' : '🌆 Après-midi'}</small>
         <select class="form-select form-select-sm mb-1" onchange="sauvegarderAttribution(this)" 
-                data-date="${date}" data-periode="${periode}" data-tournee="${tournee.id}">
+                data-date="${date}" data-periode="${periode}" data-tournee="${tournee.id}" 
+                data-old-value="${attr?.conducteur_id || ''}" 
+                style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">
             <option value="">-- Libre --</option>
-            ${conducteurs.map(c => `<option value="${c.id}" ${c.id == attr?.conducteur_id ? 'selected' : ''}>
+            ${AppState.conducteurs.map(c => `<option value="${c.id}" ${c.id == attr?.conducteur_id ? 'selected' : ''}>
                 ${c.prenom.charAt(0)}. ${c.nom}
             </option>`).join('')}
         </select>
@@ -714,13 +946,81 @@ async function sauvegarderAttribution(select) {
     const periode = select.dataset.periode;
     const tourneeId = select.dataset.tournee;
     const conducteurId = select.value ? +select.value : null;
+    const oldValue = select.dataset.oldValue || ''; // Sauvegarder l'ancienne valeur
+    
+    // Sauvegarder la nouvelle valeur pour la prochaine fois
+    select.dataset.oldValue = select.value;
     
     // Retirer d'anciennes surbrillances
     document.querySelectorAll('.planning-cell.conflict').forEach(el => {
         el.classList.remove('conflict');
     });
     
-    // Vérifier conflit : même conducteur sur la MÊME PÉRIODE du même jour
+    // VÉRIFICATION 1 : Vérifier que le conducteur possède le permis requis (BLOQUANT)
+    if (conducteurId) {
+        const conducteur = conducteurs.find(c => c.id === conducteurId);
+        const tournee = tournees.find(t => t.id == tourneeId);
+        
+        if (conducteur && tournee && tournee.permis_requis) {
+            // Récupérer les permis requis pour la tournée
+            let permisRequis = [];
+            if (Array.isArray(tournee.permis_requis)) {
+                permisRequis = tournee.permis_requis;
+            } else if (typeof tournee.permis_requis === 'string') {
+                try {
+                    const parsed = JSON.parse(tournee.permis_requis);
+                    permisRequis = Array.isArray(parsed) ? parsed : [parsed];
+                } catch {
+                    // Si ce n'est pas du JSON, c'est peut-être une simple string
+                    permisRequis = [tournee.permis_requis];
+                }
+            }
+            
+            // Récupérer les permis du conducteur
+            let permisConducteur = [];
+            if (Array.isArray(conducteur.permis)) {
+                permisConducteur = conducteur.permis;
+            } else if (typeof conducteur.permis === 'string') {
+                try {
+                    const parsed = JSON.parse(conducteur.permis);
+                    permisConducteur = Array.isArray(parsed) ? parsed : [parsed];
+                } catch {
+                    // Si ce n'est pas du JSON, split par virgules
+                    permisConducteur = conducteur.permis.split(',').map(p => p.trim());
+                }
+            }
+            
+            // Vérifier si le conducteur a AU MOINS UN des permis requis
+            const aPermisValide = permisRequis.some(permisReq => 
+                permisConducteur.includes(permisReq)
+            );
+            
+            if (!aPermisValide && permisRequis.length > 0) {
+                showToast(
+                    'Permis manquant', 
+                    `❌ ${conducteur.prenom} ${conducteur.nom} ne possède pas le(s) permis requis pour "${tournee.nom}".\n\nPermis requis : ${permisRequis.join(', ')}\nPermis du conducteur : ${permisConducteur.join(', ')}`,
+                    'danger'
+                );
+                select.value = ''; // Annuler la sélection
+                return;
+            }
+        }
+    }
+    
+    // VÉRIFICATION 2 : Avertir si on attribue un titulaire à une autre tournée (mais permettre)
+    if (conducteurId) {
+        const conducteur = conducteurs.find(c => c.id === conducteurId);
+        if (conducteur && conducteur.tournee_titulaire && conducteur.tournee_titulaire != tourneeId) {
+            const tourneeTit = tournees.find(t => t.id == conducteur.tournee_titulaire);
+            const tourneeCible = tournees.find(t => t.id == tourneeId);
+            if (!confirm(`⚠️ ATTENTION :\n\n${conducteur.prenom} ${conducteur.nom} est titulaire de "${tourneeTit?.nom}".\n\nVoulez-vous vraiment l'affecter à "${tourneeCible?.nom}" ?\n\n(Cette action est déconseillée mais possible en manuel)`)) {
+                select.value = '';
+                return;
+            }
+        }
+    }
+    
+    // VÉRIFICATION 3 : Conflit - même conducteur sur la MÊME PÉRIODE du même jour
     if (conducteurId) {
         // Tous les selects pour cette date ET CETTE PÉRIODE, SAUF celui en cours
         const selects = Array.from(document.querySelectorAll(`select[data-date="${date}"][data-periode="${periode}"]`))
@@ -753,21 +1053,34 @@ async function sauvegarderAttribution(select) {
                 `calculer_score&conducteur_id=${conducteurId}&tournee_id=${tourneeId}&date=${date}&periode=${periode}`
             );
             scoreIA = sc.data.score || 0;
+            
+            // Trouver le nom du conducteur pour le message
+            const conducteur = conducteurs.find(c => c.id === conducteurId);
+            const nomConducteur = conducteur ? `${conducteur.prenom} ${conducteur.nom}` : 'Conducteur';
+            
+            showToast('Succès', `${nomConducteur} affecté\n📊 Score IA : ${Math.round(scoreIA)}/100`, 'success');
+        } else {
+            showToast('Succès', 'Attribution supprimée', 'success');
         }
         
         await apiCall('add_attribution', 'POST', {
             date, periode, tournee_id: +tourneeId, conducteur_id: conducteurId, score_ia: scoreIA
         });
         
-        showToast('Succès', conducteurId 
-            ? `Conducteur affecté (Score: ${Math.round(scoreIA)}/100)` 
-            : 'Attribution supprimée', 'success');
-        
-        setTimeout(chargerPlanning, 200);
+        // Recharger seulement les données sans réinitialiser la navigation
+        const debut = AppState.selectedPeriod.debut;
+        const fin = AppState.selectedPeriod.fin;
+        const { data } = await apiCall(`get_planning&debut=${debut}&fin=${fin}`);
+        AppState.planningFullData = data || [];
+        renderPlanningWithNavigation();
         
     } catch (error) {
         console.error('Erreur sauvegarde attribution:', error);
-        showToast('Erreur', 'Impossible de sauvegarder l\'attribution.', 'danger');
+        const errorMsg = error.message || 'Impossible de sauvegarder l\'attribution.';
+        showToast('Erreur', errorMsg, 'danger');
+        // Restaurer la sélection précédente
+        select.value = oldValue;
+        select.dataset.oldValue = oldValue;
     } finally {
         select.disabled = false;
         parent.classList.remove('loading');
@@ -775,8 +1088,8 @@ async function sauvegarderAttribution(select) {
 }
 
 
-// Fonction pour effacer tout le planning sur une période
-async function effacerPlanning() {
+// Fonction pour effacer le planning de la période affichée uniquement
+async function effacerPlanningPeriode() {
     const debut = document.getElementById('planning-date-debut').value;
     const fin = document.getElementById('planning-date-fin').value;
     
@@ -785,26 +1098,50 @@ async function effacerPlanning() {
         return;
     }
 
-    if (!confirm(`Êtes-vous sûr de vouloir effacer TOUT le planning du ${debut} au ${fin} ? Cette action est irréversible.`)) {
+    if (!confirm(`Êtes-vous sûr de vouloir effacer le planning du ${debut} au ${fin} ?\n\nToutes les attributions seront supprimées.`)) {
         return;
     }
 
     try {
-        const response = await fetch('api.php?action=get_planning&debut=' + debut + '&fin=' + fin);
-        const result = await response.json();
+        const response = await apiCall('effacer_planning_periode', 'POST', { 
+            debut: debut,
+            fin: fin
+        });
         
-        if (result.success && result.data) {
-            // Supprime chaque attribution
-            for (const attribution of result.data) {
-                await apiCall('delete_attribution', 'POST', { id: attribution.id });
-            }
-            
-            showToast('Succès', 'Planning effacé avec succès', 'success');
+        if (response.success) {
+            showToast('Succès', `Planning effacé (${response.nb_supprimees || 0} attributions supprimées)`, 'success');
             await chargerPlanning(); // Recharge le planning
         }
     } catch (error) {
-        console.error('Erreur effacement planning:', error);
+        console.error('Erreur effacement planning période:', error);
         showToast('Erreur', 'Impossible d\'effacer le planning', 'danger');
+    }
+}
+
+// Fonction pour effacer TOUT le planning (toutes les semaines)
+async function effacerPlanningComplet() {
+    if (!confirm('⚠️ ATTENTION ⚠️\n\nVous allez supprimer TOUTES les attributions sur TOUTES les semaines !\n\nCette action est irréversible.\n\nContinuer ?')) {
+        return;
+    }
+
+    // Double confirmation
+    if (!confirm('Êtes-vous VRAIMENT sûr ? Toutes les données seront perdues !')) {
+        return;
+    }
+
+    try {
+        const response = await apiCall('effacer_planning_complet', 'POST', {});
+        
+        if (response.success) {
+            showToast('Succès', `Planning complet effacé (${response.nb_supprimees || 0} attributions supprimées)`, 'success');
+            await chargerPlanning(); // Recharge le planning
+            await chargerStats(); // Met à jour les stats
+        }
+    } catch (error) {
+        console.error('Erreur effacement planning complet:', error);
+        // Message spécifique si c'est une erreur de permission
+        const errorMsg = error.message || 'Impossible d\'effacer le planning complet';
+        showToast('Erreur', errorMsg, 'danger');
     }
 }
 
@@ -836,7 +1173,7 @@ async function remplirPlanningAuto() {
         if (response.ok && result.success) {
             const { succes, echecs } = result.data;
             showToast('IA Générée', `${succes} attributions créées, ${echecs} échecs`, 'success');
-            setTimeout(() => chargerPlanning(), 300);
+            await chargerPlanning();
         } else {
             throw new Error(result.error || 'Erreur IA');
         }
@@ -849,11 +1186,124 @@ async function remplirPlanningAuto() {
     }
 }
 
+// Actualiser le planning en recalculant les scores pour les attributions existantes
+async function actualiserPlanning() {
+    const debut = document.getElementById('planning-date-debut').value;
+    const fin = document.getElementById('planning-date-fin').value;
+    
+    if (!debut || !fin) {
+        showToast('Attention', 'Sélectionnez une période valide', 'warning');
+        return;
+    }
+
+    if (!confirm(`Actualiser le planning du ${debut} au ${fin} ?\n\nCette opération va :\n- Supprimer les attributions invalides\n- Réattribuer les conducteurs selon les règles (titulaires prioritaires)\n- Compléter les créneaux vides`)) {
+        return;
+    }
+
+    const btn = event.target;
+    const btnOriginalContent = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Actualisation...';
+
+    try {
+        // Récupérer le planning actuel
+        const { data: planningActuel } = await apiCall(`get_planning&debut=${debut}&fin=${fin}`);
+        
+        let suppressions = 0;
+        
+        // Phase 1 : Supprimer les attributions invalides
+        for (const attribution of planningActuel) {
+            if (!attribution.conducteur_id) continue;
+            
+            let doitSupprimer = false;
+            
+            // Trouver le conducteur
+            const conducteur = conducteurs.find(c => c.id == attribution.conducteur_id);
+            if (!conducteur) {
+                doitSupprimer = true;
+            } else {
+                // Vérifier si c'est un titulaire sur une mauvaise tournée
+                if (conducteur.tournee_titulaire && conducteur.tournee_titulaire != attribution.tournee_id) {
+                    doitSupprimer = true;
+                    console.log(`Conducteur ${conducteur.prenom} ${conducteur.nom} n'est plus titulaire de la tournée ${attribution.tournee_id}`);
+                }
+                
+                // Vérifier la disponibilité du conducteur
+                if (!doitSupprimer) {
+                    const scoreResult = await apiCall(
+                        `calculer_score&conducteur_id=${attribution.conducteur_id}&tournee_id=${attribution.tournee_id}&date=${attribution.date}&periode=${attribution.periode}`
+                    );
+                    
+                    if (!scoreResult.data.disponible) {
+                        doitSupprimer = true;
+                    }
+                }
+            }
+            
+            if (doitSupprimer) {
+                await apiCall('delete_attribution', 'POST', { id: attribution.id });
+                suppressions++;
+            }
+        }
+        
+        // Phase 1.5 : Recalculer les scores des attributions restantes
+        const { data: planningRestant } = await apiCall(`get_planning&debut=${debut}&fin=${fin}`);
+        let recalculs = 0;
+        
+        for (const attribution of planningRestant) {
+            if (!attribution.conducteur_id) continue;
+            
+            // Recalculer le score
+            const scoreResult = await apiCall(
+                `calculer_score&conducteur_id=${attribution.conducteur_id}&tournee_id=${attribution.tournee_id}&date=${attribution.date}&periode=${attribution.periode}`
+            );
+            
+            const nouveauScore = scoreResult.data?.score || 0;
+            
+            // Mettre à jour si le score a changé
+            if (Math.abs(nouveauScore - (attribution.score_ia || 0)) > 0.1) {
+                await apiCall('update_attribution', 'POST', { 
+                    id: attribution.id,
+                    score_ia: nouveauScore
+                });
+                recalculs++;
+            }
+        }
+        
+        // Phase 2 : Remplir les créneaux vides avec la nouvelle logique (titulaires d'abord)
+        const remplissageResult = await fetch('api.php?action=remplir_auto', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json;charset=utf-8' },
+            body: JSON.stringify({ debut, fin })
+        });
+        const remplissage = await remplissageResult.json();
+        const ajouts = remplissage.data?.succes || 0;
+        
+        let message = `Actualisation terminée :\n`;
+        if (suppressions > 0) message += `✖️ ${suppressions} conducteur(s) retiré(s)\n`;
+        if (recalculs > 0) message += `🔄 ${recalculs} score(s) recalculé(s)\n`;
+        if (ajouts > 0) message += `✅ ${ajouts} créneau(x) rempli(s)\n`;
+        message += `ℹ️ Les titulaires sont prioritaires sur leur tournée`;
+        
+        showToast('Actualisation terminée', message, 'success');
+        
+        await chargerPlanning();
+        
+    } catch (error) {
+        console.error('Erreur actualisation planning:', error);
+        showToast('Erreur', 'Impossible d\'actualiser le planning', 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = btnOriginalContent;
+    }
+}
+
 // ==================== CONFIGURATION ====================
 async function chargerConfig() {
     try {
         const { data } = await apiCall('get_config');
-        config = data || {};
+        AppState.config = data || {};
+        config = AppState.config; // Mise à jour de la variable globale
         renderConfig();
         chargerCriteresIA();
     } catch (error) {
@@ -864,10 +1314,12 @@ async function chargerConfig() {
 function renderConfig() {
     const lp = document.getElementById('liste-permis');
     const lv = document.getElementById('liste-vehicules');
+    const lt = document.getElementById('liste-types-tournee');
     if (!lp || !lv) return;
     
     lp.innerHTML = '';
     lv.innerHTML = '';
+    if (lt) lt.innerHTML = '';
     
     (config.types_permis || []).forEach(p => {
         lp.innerHTML += `<div class="d-flex justify-content-between align-items-center border-bottom py-2">
@@ -886,19 +1338,58 @@ function renderConfig() {
             </button>
         </div>`;
     });
+    
+    if (lt) {
+        const typesTries = (config.types_tournee || []).sort((a, b) => a.ordre - b.ordre);
+        typesTries.forEach(t => {
+            lt.innerHTML += `<div class="d-flex justify-content-between align-items-center border-bottom py-2">
+                <div class="flex-grow-1">
+                    <span class="badge bg-secondary me-2">${t.ordre}</span>
+                    <span>${t.nom}</span>
+                </div>
+                <div class="btn-group btn-group-sm">
+                    <input type="number" class="form-control form-control-sm" style="width:60px" 
+                           value="${t.ordre}" min="1" 
+                           onchange="modifierOrdreTypeTournee('${t.nom}', this.value)">
+                    <button class="btn btn-outline-danger" onclick="supprimerTypeTournee('${t.nom}')">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>`;
+        });
+    }
+    
+    // Peupler le select d'export RGPD
+    const selectRGPD = document.getElementById('conducteur-export-rgpd');
+    if (selectRGPD) {
+        selectRGPD.innerHTML = '<option value="">-- Choisir un conducteur --</option>';
+        conducteurs.forEach(c => {
+            selectRGPD.innerHTML += `<option value="${c.id}">${c.prenom} ${c.nom}</option>`;
+        });
+    }
 }
 
 function chargerCriteresIA() {
-    document.getElementById('poids-titulaire').value = config.poids_titulaire || 100;
-    document.getElementById('poids-connaissance').value = config.poids_connaissance || 80;
-    document.getElementById('poids-experience').value = config.poids_experience || 4;
-    document.getElementById('poids-disponibilite').value = config.poids_disponibilite || 60;
-    document.getElementById('penalite-interimaire').value = config.penalite_interimaire || -50;
+    const poidsConnaissance = config.poids_connaissance || 80;
+    const poidsExperience = config.poids_experience || 2;
+    const poidsDisponibilite = config.poids_disponibilite || 60;
+    const penaliteInterimaire = config.penalite_interimaire || -50;
+    
+    document.getElementById('poids-connaissance').value = poidsConnaissance;
+    document.getElementById('label-poids-connaissance').textContent = poidsConnaissance;
+    
+    document.getElementById('poids-experience').value = poidsExperience;
+    document.getElementById('label-poids-experience').textContent = poidsExperience;
+    
+    document.getElementById('poids-disponibilite').value = poidsDisponibilite;
+    document.getElementById('label-poids-disponibilite').textContent = poidsDisponibilite;
+    
+    document.getElementById('penalite-interimaire').value = penaliteInterimaire;
+    document.getElementById('label-penalite-interimaire').textContent = penaliteInterimaire;
 }
 
 async function sauvegarderCriteresIA() {
     const criteres = {
-        poids_titulaire: +document.getElementById('poids-titulaire').value,
         poids_connaissance: +document.getElementById('poids-connaissance').value,
         poids_experience: +document.getElementById('poids-experience').value,
         poids_disponibilite: +document.getElementById('poids-disponibilite').value,
@@ -963,6 +1454,49 @@ async function supprimerVehicule(val) {
     await apiCall('set_config', 'POST', { types_vehicules: config.types_vehicules });
     showToast('Succès', 'Véhicule supprimé', 'warning');
     chargerConfig();
+}
+
+async function ajouterTypeTournee() {
+    const inputNom = document.getElementById('nouveau-type-tournee');
+    const inputOrdre = document.getElementById('ordre-type-tournee');
+    const nom = inputNom.value.trim();
+    const ordre = parseInt(inputOrdre.value) || 999;
+    
+    if (!nom) return;
+    
+    config.types_tournee = config.types_tournee || [];
+    if (config.types_tournee.some(t => t.nom === nom)) {
+        showToast('Attention', 'Ce type de tournée existe déjà', 'warning');
+        return;
+    }
+    
+    config.types_tournee.push({ nom, ordre });
+    // Trier par ordre
+    config.types_tournee.sort((a, b) => a.ordre - b.ordre);
+    
+    await apiCall('set_config', 'POST', { types_tournee: config.types_tournee });
+    showToast('Succès', 'Type de tournée ajouté', 'success');
+    inputNom.value = '';
+    inputOrdre.value = '';
+    chargerConfig();
+}
+
+async function supprimerTypeTournee(nom) {
+    config.types_tournee = config.types_tournee.filter(x => x.nom !== nom);
+    await apiCall('set_config', 'POST', { types_tournee: config.types_tournee });
+    showToast('Succès', 'Type de tournée supprimé', 'warning');
+    chargerConfig();
+}
+
+async function modifierOrdreTypeTournee(nom, nouvelOrdre) {
+    const type = config.types_tournee.find(t => t.nom === nom);
+    if (type) {
+        type.ordre = parseInt(nouvelOrdre);
+        config.types_tournee.sort((a, b) => a.ordre - b.ordre);
+        await apiCall('set_config', 'POST', { types_tournee: config.types_tournee });
+        showToast('Succès', 'Ordre modifié', 'success');
+        chargerConfig();
+    }
 }
 
 // Gestion du logo
@@ -1066,5 +1600,92 @@ async function supprimerLogo() {
     } catch (error) {
         console.error('Erreur suppression logo:', error);
         showToast('Erreur', 'Impossible de supprimer le logo', 'danger');
+    }
+}
+
+// ==================== PROFIL UTILISATEUR ====================
+// Ouvrir la modal de notice
+function ouvrirNotice() {
+    const modal = new bootstrap.Modal(document.getElementById('modalNotice'));
+    modal.show();
+}
+
+function ouvrirModalRGPD() {
+    const modal = new bootstrap.Modal(document.getElementById('modalRGPD'));
+    modal.show();
+}
+
+async function ouvrirMonProfil() {
+    try {
+        // Récupérer l'ID de l'utilisateur connecté
+        const { data } = await apiCall('get_current_user');
+        
+        if (data && data.id) {
+            // Activer l'onglet Utilisateurs
+            const utilisateursTab = document.getElementById('utilisateurs-tab');
+            if (utilisateursTab) {
+                // Cliquer sur l'onglet pour l'activer
+                utilisateursTab.click();
+                
+                // Attendre que l'onglet soit chargé puis ouvrir le modal
+                setTimeout(() => {
+                    afficherModalUtilisateur(data.id);
+                }, 100);
+            } else {
+                // Si l'utilisateur n'est pas admin, afficher un message
+                showToast('Information', 'Seuls les administrateurs peuvent modifier leur profil', 'info');
+            }
+        }
+    } catch (error) {
+        console.error('Erreur ouverture profil:', error);
+        showToast('Erreur', 'Impossible d\'ouvrir le profil', 'danger');
+    }
+}
+
+// ==================== EXPORT RGPD ====================
+
+async function exporterDonneesRGPD() {
+    const conducteurId = document.getElementById('conducteur-export-rgpd').value;
+    const format = document.querySelector('input[name="format-export"]:checked').value;
+    
+    if (!conducteurId) {
+        showToast('Attention', 'Veuillez sélectionner un conducteur', 'warning');
+        return;
+    }
+    
+    try {
+        if (format === 'pdf') {
+            // Export PDF - Ouvrir dans nouvelle fenêtre
+            const url = `export_rgpd_pdf.php?conducteur_id=${conducteurId}`;
+            window.open(url, '_blank');
+            
+            const conducteur = conducteurs.find(c => c.id == conducteurId);
+            if (conducteur) {
+                showToast('Succès', `Export PDF de ${conducteur.prenom} ${conducteur.nom} en cours...`, 'success');
+            }
+        } else {
+            // Export JSON - Téléchargement
+            const response = await apiCall(`export_rgpd&conducteur_id=${conducteurId}`);
+            
+            if (response.success && response.data) {
+                const data = response.data;
+                
+                // Créer un fichier JSON téléchargeable
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `donnees_rgpd_${data.conducteur.nom}_${data.conducteur.prenom}_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                showToast('Succès', `Données de ${data.conducteur.prenom} ${data.conducteur.nom} exportées avec succès`, 'success');
+            }
+        }
+    } catch (error) {
+        console.error('Erreur export RGPD:', error);
+        showToast('Erreur', 'Impossible d\'exporter les données', 'danger');
     }
 }
