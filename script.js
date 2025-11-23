@@ -1138,25 +1138,35 @@ async function sauvegarderAttribution(select) {
             const tourneeDeja = tournees.find(t => t.id == attr.tournee_id);
             if (!tourneeDeja) continue;
             
-            // CONFLIT 1 : Le conducteur est déjà sur une tournée "journée"
-            if (tourneeDeja.duree === 'journée') {
-                const confirmMsg = `⚠️ CONFLIT DÉTECTÉ\n\n${conducteurs.find(c => c.id === conducteurId)?.prenom || 'Ce conducteur'} est déjà affecté à une tournée JOURNÉE "${tourneeDeja.nom}" le ${new Date(date).toLocaleDateString('fr-FR')}.\n\nUne tournée "journée" occupe TOUTE la journée (matin + après-midi).\n\nVoulez-vous :\n• SUPPRIMER l'attribution de "${tourneeDeja.nom}"\n• ET affecter à "${tourneeActuelle?.nom || 'cette tournée'}" (${periode}) ?\n\n⚠️ Cela libérera le conducteur de sa tournée journée.`;
+            // CONFLIT 1 : Le conducteur est déjà sur une tournée "journée" ou "matin et après-midi"
+            if (tourneeDeja.duree === 'journée' || tourneeDeja.duree === 'matin et après-midi') {
+                const typeTournee = tourneeDeja.duree === 'journée' ? 'JOURNÉE' : 'MATIN ET APRÈS-MIDI';
                 
-                if (!confirm(confirmMsg)) {
-                    select.value = '';
-                    return;
+                // Si on affecte sur la même période que celle déjà occupée
+                if (attr.periode === periode) {
+                    const confirmMsg = `⚠️ CONFLIT DÉTECTÉ\n\n${conducteurs.find(c => c.id === conducteurId)?.prenom || 'Ce conducteur'} est déjà affecté ${periode === 'matin' ? 'le matin' : 'l\'après-midi'} sur "${tourneeDeja.nom}".\n\nVoulez-vous :\n• SUPPRIMER l'attribution de "${tourneeDeja.nom}" (${periode})\n• ET affecter à "${tourneeActuelle?.nom || 'cette tournée'}" (${periode}) ?\n\n⚠️ Cela remplacera uniquement la période ${periode}.`;
+                    
+                    if (!confirm(confirmMsg)) {
+                        select.value = '';
+                        return;
+                    }
+                    
+                    // Supprimer UNIQUEMENT cette période (pas toute la journée)
+                    await apiCall('delete_attribution', 'POST', { id: attr.id });
+                    showToast('Modification', `Attribution à "${tourneeDeja.nom}" (${periode}) supprimée`, 'warning');
+                    // Continuer avec la nouvelle attribution
+                    break;
                 }
                 
-                // Supprimer l'ancienne attribution
-                await apiCall('delete_attribution', 'POST', { id: attr.id });
-                showToast('Modification', `Attribution à "${tourneeDeja.nom}" (journée) supprimée`, 'warning');
-                // Continuer avec la nouvelle attribution
-                break;
+                // Si on affecte sur l'autre période (ex: déjà matin, on veut après-midi)
+                // Pas de conflit, on peut ajouter normalement
+                continue;
             }
             
-            // CONFLIT 2 : On veut affecter à une tournée "journée" mais le conducteur a déjà des attributions
-            if (tourneeActuelle && tourneeActuelle.duree === 'journée') {
-                const confirmMsg = `⚠️ CONFLIT DÉTECTÉ\n\n${conducteurs.find(c => c.id === conducteurId)?.prenom || 'Ce conducteur'} est déjà affecté à "${tourneeDeja.nom}" (${attr.periode}) le ${new Date(date).toLocaleDateString('fr-FR')}.\n\nVous voulez l'affecter à une tournée JOURNÉE "${tourneeActuelle.nom}" qui occupe TOUTE la journée.\n\nVoulez-vous :\n• SUPPRIMER l'attribution de "${tourneeDeja.nom}" (${attr.periode})\n• ET affecter à "${tourneeActuelle.nom}" (journée complète) ?\n\n⚠️ Cela libérera le conducteur de "${tourneeDeja.nom}".`;
+            // CONFLIT 2 : On veut affecter à une tournée "journée" ou "matin et après-midi" mais le conducteur a déjà des attributions
+            if (tourneeActuelle && (tourneeActuelle.duree === 'journée' || tourneeActuelle.duree === 'matin et après-midi')) {
+                const typeTournee = tourneeActuelle.duree === 'journée' ? 'JOURNÉE' : 'MATIN ET APRÈS-MIDI';
+                const confirmMsg = `⚠️ CONFLIT DÉTECTÉ\n\n${conducteurs.find(c => c.id === conducteurId)?.prenom || 'Ce conducteur'} est déjà affecté à "${tourneeDeja.nom}" (${attr.periode}) le ${new Date(date).toLocaleDateString('fr-FR')}.\n\nVous voulez l'affecter à une tournée ${typeTournee} "${tourneeActuelle.nom}" qui occupe TOUTE la journée.\n\nVoulez-vous :\n• SUPPRIMER l'attribution de "${tourneeDeja.nom}" (${attr.periode})\n• ET affecter à "${tourneeActuelle.nom}" (journée complète) ?\n\n⚠️ Cela libérera le conducteur de "${tourneeDeja.nom}".`;
                 
                 if (!confirm(confirmMsg)) {
                     select.value = '';
@@ -1172,12 +1182,20 @@ async function sauvegarderAttribution(select) {
                 break;
             }
             
-            // CONFLIT 3 : Même période, tournées différentes (l'ancien comportement)
+            // CONFLIT 3 : Même période, tournées différentes (proposer de remplacer)
             if (attr.periode === periode) {
-                select.closest('div').classList.add('conflict');
-                showToast('Conflit', `Ce conducteur est déjà affecté ${periode === 'matin' ? 'le matin' : 'l\'après-midi'} sur "${tourneeDeja.nom}".`, 'danger');
-                select.value = '';
-                return;
+                const confirmMsg = `⚠️ CONFLIT DÉTECTÉ\n\n${conducteurs.find(c => c.id === conducteurId)?.prenom || 'Ce conducteur'} est déjà affecté ${periode === 'matin' ? 'le matin' : 'l\'après-midi'} sur "${tourneeDeja.nom}".\n\nVoulez-vous :\n• SUPPRIMER l'attribution de "${tourneeDeja.nom}" (${periode})\n• ET affecter à "${tourneeActuelle?.nom || 'cette tournée'}" (${periode}) ?\n\n⚠️ Cela remplacera l'attribution actuelle.`;
+                
+                if (!confirm(confirmMsg)) {
+                    select.value = '';
+                    return;
+                }
+                
+                // Supprimer l'ancienne attribution
+                await apiCall('delete_attribution', 'POST', { id: attr.id });
+                showToast('Modification', `Attribution à "${tourneeDeja.nom}" (${periode}) supprimée`, 'warning');
+                // Continuer avec la nouvelle attribution
+                break;
             }
         }
     }
