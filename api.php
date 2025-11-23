@@ -424,8 +424,10 @@ try {
                     'prenom' => $conducteur['prenom'],
                     'permis' => $conducteur['permis'],
                     'experience' => $conducteur['experience'],
+                    'date_embauche' => $conducteur['date_embauche'] ?? null,
                     'statut_entreprise' => $conducteur['statut_entreprise'],
                     'tournee_titulaire_id' => $conducteur['tournee_titulaire'],
+                    'tournees_maitrisees' => json_decode($conducteur['tournees_maitrisees'] ?? '[]', true),
                     'zone_geographique' => $conducteur['zone_geo'] ?? null,
                     'connaissance_tournees' => $conducteur['connaissance'] ?? 0,
                     'date_creation' => $conducteur['date_creation'] ?? null
@@ -444,20 +446,38 @@ try {
                 'performance' => $performance,
                 'informations_rgpd' => [
                     'responsable_traitement' => '[NOM DE VOTRE ENTREPRISE]',
-                    'finalite_traitement' => 'Gestion et planification des tournées de livraison',
+                    'finalite_traitement' => 'Gestion et planification des tournées de livraison avec attribution automatique par IA',
                     'base_legale' => 'Exécution d\'un contrat de travail',
                     'duree_conservation' => '3 ans après fin de contrat (obligations légales)',
                     'destinataires' => 'Administrateurs de l\'application, responsables planning',
+                    'donnees_collectees' => [
+                        'Identité (nom, prénom)',
+                        'Permis de conduire détenus',
+                        'Expérience (manuelle ou calculée depuis date d\'embauche)',
+                        'Date d\'embauche (optionnelle)',
+                        'Statut d\'entreprise (CDI, CDD, intérimaire, sous-traitant)',
+                        'Tournée titulaire et tournées maîtrisées',
+                        'Disponibilités (repos, congés, absences)',
+                        'Historique de planning (6 derniers mois)',
+                        'Statistiques de performance (3 derniers mois)'
+                    ],
                     'droits' => [
-                        'Droit d\'accès à vos données',
-                        'Droit de rectification',
-                        'Droit à l\'effacement',
+                        'Droit d\'accès à vos données (via cet export)',
+                        'Droit de rectification (modification du profil)',
+                        'Droit à l\'effacement (suppression du compte)',
                         'Droit à la limitation du traitement',
-                        'Droit à la portabilité',
+                        'Droit à la portabilité (format JSON)',
                         'Droit d\'opposition'
                     ],
+                    'securite' => [
+                        'Chiffrement des mots de passe (bcrypt)',
+                        'Accès sécurisé par authentification',
+                        'Gestion des droits d\'accès par rôle',
+                        'Protection des fichiers uploadés',
+                        'Sauvegardes régulières'
+                    ],
                     'contact_dpo' => '[EMAIL DPO/CONTACT]',
-                    'reclamation_cnil' => 'www.cnil.fr'
+                    'reclamation_cnil' => 'www.cnil.fr - 3 Place de Fontenoy, 75334 PARIS CEDEX 07'
                 ]
             ];
             

@@ -132,6 +132,7 @@ $infos = [
     'Prénom' => $conducteur['prenom'] ?? '-',
     'Permis de conduire' => $permis ?? '-',
     'Années d\'expérience' => ($conducteur['experience'] ?? '0') . ' ans',
+    'Date d\'embauche' => $conducteur['date_embauche'] ? date('d/m/Y', strtotime($conducteur['date_embauche'])) : 'Non renseignée',
     'Statut entreprise' => $conducteur['statut_entreprise'] ?? '-',
     'Zone géographique' => $conducteur['zone_geo'] ?? '-',
     'Connaissance tournées' => ($conducteur['connaissance'] ?? '0') . '/100',
@@ -267,23 +268,43 @@ $pdf->Ln(2);
 $pdf->SetFont('Arial', 'B', 10);
 $pdf->Cell(0, 6, utf8ToLatin1('Finalité du traitement :'), 0, 1);
 $pdf->SetFont('Arial', '', 9);
-$pdf->MultiCell(0, 5, utf8ToLatin1('Gestion et planification des tournées de livraison, suivi des performances et des disponibilités.'));
+$pdf->MultiCell(0, 5, utf8ToLatin1('Gestion et planification des tournées de livraison avec attribution automatique par IA, suivi des performances, gestion des disponibilités et des congés.'));
+$pdf->Ln(2);
+
+$pdf->SetFont('Arial', 'B', 10);
+$pdf->Cell(0, 6, utf8ToLatin1('Données collectées :'), 0, 1);
+$pdf->SetFont('Arial', '', 8);
+$donneesCollectees = [
+    'Identité (nom, prénom)',
+    'Permis de conduire détenus',
+    'Expérience (manuelle ou calculée depuis date d\'embauche)',
+    'Date d\'embauche (optionnelle)',
+    'Statut d\'entreprise (CDI, CDD, intérimaire, sous-traitant)',
+    'Tournée titulaire et tournées maîtrisées',
+    'Disponibilités (repos, congés, absences)',
+    'Historique de planning (6 derniers mois)',
+    'Statistiques de performance (3 derniers mois)'
+];
+foreach ($donneesCollectees as $donnee) {
+    $pdf->Cell(5);
+    $pdf->Cell(0, 4, utf8ToLatin1('- ' . $donnee), 0, 1);
+}
 $pdf->Ln(2);
 
 $pdf->SetFont('Arial', 'B', 10);
 $pdf->Cell(0, 6, utf8ToLatin1('Vos droits RGPD :'), 0, 1);
 $pdf->SetFont('Arial', '', 8);
 $droits = [
-    'Droit d\'accès à vos données personnelles',
-    'Droit de rectification de vos données',
-    'Droit à l\'effacement de vos données',
+    'Droit d\'accès à vos données personnelles (via cet export)',
+    'Droit de rectification de vos données (modification du profil)',
+    'Droit à l\'effacement de vos données (suppression du compte)',
     'Droit à la limitation du traitement',
-    'Droit à la portabilité de vos données',
+    'Droit à la portabilité de vos données (format JSON)',
     'Droit d\'opposition au traitement'
 ];
 foreach ($droits as $droit) {
     $pdf->Cell(5);
-    $pdf->Cell(0, 5, utf8ToLatin1('- ' . $droit), 0, 1);
+    $pdf->Cell(0, 4, utf8ToLatin1('- ' . $droit), 0, 1);
 }
 $pdf->Ln(2);
 

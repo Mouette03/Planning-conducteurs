@@ -29,7 +29,8 @@ try {
         `prenom` VARCHAR(100) NOT NULL,
         `permis` JSON NOT NULL COMMENT 'Liste des permis du conducteur',
         `contact` VARCHAR(100),
-        `experience` INT DEFAULT 0,
+        `experience` INT DEFAULT 0 COMMENT 'Expérience manuelle en années',
+        `date_embauche` DATE NULL COMMENT 'Date d\'embauche pour calcul automatique de l\'expérience',
         `tournees_maitrisees` JSON COMMENT 'IDs des tournées que le conducteur maîtrise',
         `tournee_titulaire` INT COMMENT 'ID de la tournée dont le conducteur est titulaire',
         `statut_entreprise` ENUM('CDI','CDD','sous-traitant','interimaire') DEFAULT 'CDI',
@@ -49,7 +50,8 @@ try {
         `type_tournee` VARCHAR(100) COMMENT 'Type de tournée pour le tri',
         `permis_requis` JSON NOT NULL COMMENT 'Liste des permis requis pour cette tournée',
         `difficulte` INT DEFAULT 1,
-        `duree` ENUM('journee','matin','apres-midi') DEFAULT 'journee',
+        `duree` VARCHAR(50) DEFAULT 'journée' COMMENT 'Durée : matin, après-midi, journée, matin et après-midi',
+        `logo` VARCHAR(255) NULL COMMENT 'Emoji ou chemin vers image de logo',
         `date_creation` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

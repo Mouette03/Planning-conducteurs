@@ -116,9 +116,9 @@ L'algorithme vérifie dans cet ordre :
 
 1. **Permis** ❌ Bloquant → Si pas de permis compatible = score 0
 2. **Disponibilité** ❌ Bloquant → Congés, repos, maladie = score 0
-3. **Titulaire** ✅ +100 points
-4. **Connaissance** ✅ +80 points  
-5. **Expérience** ✅ +points selon années
+3. **Titulaire** ✅ +80 points (configurable dans Paramètres IA)
+4. **Connaissance** ✅ +80 points (configurable dans Paramètres IA)
+5. **Expérience** ✅ +points selon années (multiplicateur configurable)
 6. **Statut** ✅/❌ CDI +10, Intérimaire -50
 
 ## ⚠️ Points d'Attention

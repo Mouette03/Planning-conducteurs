@@ -1,6 +1,6 @@
 # Politique de Confidentialité et RGPD
 
-**Dernière mise à jour :** 23 octobre 2025
+**Dernière mise à jour :** 14 novembre 2025
 
 ## 1. Responsable du traitement
 
@@ -25,31 +25,47 @@ Dans le cadre de l'utilisation de notre application de planification des conduct
 ### 2.2 Données des conducteurs
 - Nom et prénom
 - Permis de conduire détenus
-- Années d'expérience
+- Années d'expérience (saisie manuelle ou calculée automatiquement)
+- Date d'embauche (optionnelle, pour calcul automatique de l'expérience)
 - Statut d'entreprise (CDI, CDD, sous-traitant, intérimaire)
 - Tournée titulaire
+- Tournées maîtrisées
 - Disponibilités (congés, repos, absences)
 - Zone géographique de travail
 - Véhicules pouvant être conduits
 - Niveau de connaissance des tournées
 - Performance et statistiques de travail
+- Historique de planning (6 derniers mois pour export RGPD)
+
+### 2.3 Données des tournées
+- Nom et description
+- Zone géographique
+- Type de véhicule requis
+- Permis requis
+- Niveau de difficulté
+- Durée (matin, après-midi, journée, matin et après-midi)
+- Logo personnalisé (emoji ou image)
 
 ## 3. Finalités du traitement
 
 Les données sont collectées et traitées pour les finalités suivantes :
 - Gestion et planification des tournées de livraison
-- Attribution optimisée des conducteurs aux tournées
+- Attribution optimisée des conducteurs aux tournées via algorithme d'IA
+- Calcul automatique de scores de pertinence (expérience, disponibilité, connaissance)
 - Suivi des performances et statistiques
 - Gestion des disponibilités et congés
+- Gestion des titulaires et remplaçants
+- Détection intelligente des conflits d'attribution
 - Administration des comptes utilisateurs
 - Sécurité et traçabilité des opérations
+- Export des données personnelles (droit d'accès RGPD)
 
 ## 4. Base légale du traitement
 
 Le traitement des données repose sur :
 - **Exécution d'un contrat** : Gestion de l'activité professionnelle des conducteurs
 - **Intérêt légitime** : Optimisation de la planification et gestion opérationnelle
-- **Consentement** : Pour certaines données spécifiques (newsletter, communications marketing si applicable)
+- **Consentement** : Pour certaines données spécifiques
 
 ## 5. Destinataires des données
 
@@ -72,9 +88,13 @@ Les données sont accessibles :
 Nous mettons en œuvre des mesures techniques et organisationnelles appropriées :
 - Chiffrement des mots de passe (hachage bcrypt)
 - Accès sécurisé par authentification
-- Gestion des droits d'accès par rôle
+- Gestion des droits d'accès par rôle (administrateur/utilisateur)
+- Protection des fichiers uploadés (logos de tournées)
+- Validation des formats de fichiers (images uniquement)
+- Limitation de taille des fichiers (1 MB maximum)
 - Sauvegardes régulières des données
 - Hébergement sécurisé
+- Logs d'activité pour audit
 
 ## 8. Vos droits
 
@@ -93,7 +113,10 @@ Vous pouvez demander la suppression de vos données dans certaines conditions.
 Vous pouvez demander la limitation du traitement de vos données.
 
 ### 8.5 Droit à la portabilité
-Vous pouvez demander la récupération de vos données dans un format structuré.
+Vous pouvez demander la récupération de vos données dans un format structuré (export RGPD au format JSON disponible directement dans l'application).
+
+### 8.6 Droit à l'oubli
+En cas de suppression d'un conducteur, toutes ses données personnelles sont anonymisées ou supprimées, à l'exception des historiques obligatoires légaux.
 
 ### 8.6 Droit d'opposition
 Vous pouvez vous opposer au traitement de vos données pour des motifs légitimes.

@@ -59,7 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             `prenom` VARCHAR(100) NOT NULL,
             `permis` JSON,
             `contact` VARCHAR(100),
-            `experience` INT DEFAULT 0,
+            `experience` INT DEFAULT 0 COMMENT 'Expérience manuelle en années',
+            `date_embauche` DATE NULL COMMENT 'Date d\'embauche pour calcul automatique de l\'expérience',
             `tournees_maitrisees` JSON,
             `tournee_titulaire` INT,
             `statut_entreprise` ENUM('CDI','CDD','sous-traitant','interimaire') DEFAULT 'CDI',
@@ -80,7 +81,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             `type_vehicule` VARCHAR(50),
             `permis_requis` JSON,
             `difficulte` INT DEFAULT 1,
-            `duree` ENUM('journee','matin','apres-midi') DEFAULT 'journee',
+            `duree` VARCHAR(50) DEFAULT 'journée' COMMENT 'Durée : matin, après-midi, journée, matin et après-midi',
+            `logo` VARCHAR(255) NULL COMMENT 'Emoji ou chemin vers image de logo',
             `date_creation` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -136,12 +138,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->exec("
         INSERT INTO `{$prefix}tournees` (`nom`, `description`, `zone_geo`, `type_vehicule`, `type_tournee`, `permis_requis`, `difficulte`, `duree`) VALUES
         ('Paris Centre', 'Livraison centre de Paris', 'Paris 75', '12T', 'urbaine', '[\"C\"]', 3, 'matin'),
-        ('Banlieue Nord', 'Tournée banlieue nord', '93/95', '19T', 'inter-urbaine', '[\"C\",\"E\"]', 4, 'journee'),
+        ('Banlieue Nord', 'Tournée banlieue nord', '93/95', '19T', 'inter-urbaine', '[\"C\",\"E\"]', 4, 'journée'),
         ('Express Matin', 'Livraisons express matinales', 'Île-de-France', '7.5T', 'express', '[\"C\"]', 2, 'matin'),
-        ('Express Après-midi', 'Livraisons express après-midi', 'Île-de-France', '7.5T', 'express', '[\"C\"]', 2, 'apres-midi'),
-        ('Longue Distance', 'Trajet longue distance', 'National', '40T', 'longue-distance', '[\"C\",\"E\"]', 5, 'journee'),
+        ('Express Après-midi', 'Livraisons express après-midi', 'Île-de-France', '7.5T', 'express', '[\"C\"]', 2, 'après-midi'),
+        ('Longue Distance', 'Trajet longue distance', 'National', '40T', 'longue-distance', '[\"C\",\"E\"]', 5, 'journée'),
         ('Livraison Locale AM', 'Livraisons locales matin', 'Local', '3.5T', 'locale', '[\"B\"]', 1, 'matin'),
-        ('Livraison Locale PM', 'Livraisons locales après-midi', 'Local', '3.5T', 'locale', '[\"B\"]', 1, 'apres-midi')
+        ('Livraison Locale PM', 'Livraisons locales après-midi', 'Local', '3.5T', 'locale', '[\"B\"]', 1, 'après-midi')
         ");
 
         // Création des conducteurs d'exemple

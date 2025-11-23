@@ -367,8 +367,22 @@ function afficherModalConducteur(id=null) {
                 <input id="c-contact" class="form-control" value="${c.contact || ''}" type="email">
             </div>
             <div class="col-md-6 mb-3">
-                <label class="form-label">Expérience (années)</label>
-                <input type="number" id="c-exp" class="form-control" value="${c.experience || 0}" min="0">
+                <label class="form-label">
+                    Date d'embauche 
+                    <small class="text-muted">(ancienneté calculée auto)</small>
+                </label>
+                <input type="date" id="c-date-embauche" class="form-control" value="${c.date_embauche || ''}">
+                <small class="text-muted">
+                    ${c.date_embauche ? `Ancienneté : ${c.experience || 0} an(s)` : 'Ou renseignez l\'ancienneté manuellement ci-dessous'}
+                </small>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">
+                    Ancienneté (années)
+                    <small class="text-muted">(si pas de date d'embauche)</small>
+                </label>
+                <input type="number" id="c-exp" class="form-control" value="${c.experience || 0}" min="0" 
+                       ${c.date_embauche ? 'readonly style="background:#e9ecef"' : ''}>
             </div>
             <div class="col-md-6 mb-3">
                 <label class="form-label">Statut</label>
@@ -565,6 +579,7 @@ async function sauvegarderConducteur() {
         nom: document.getElementById('c-nom').value,
         permis: permisSelectionnes,
         contact: document.getElementById('c-contact').value,
+        date_embauche: document.getElementById('c-date-embauche').value || null,
         experience: +document.getElementById('c-exp').value,
         statut_entreprise: document.getElementById('c-statut').value,
         tournees_maitrisees: tourneesMaitrisees,
@@ -716,10 +731,15 @@ function afficherModalTournee(id=null) {
         <div class="mb-3">
             <label class="form-label">Durée</label>
             <select id="t-duree" class="form-select">
-                <option value="matin" ${t.duree==='matin'?'selected':''}>Matin</option>
-                <option value="apres-midi" ${t.duree==='apres-midi'?'selected':''}>Après-midi</option>
-                <option value="journee" ${t.duree==='journee'?'selected':''}>Journée</option>
+                <option value="matin" ${t.duree==='matin'?'selected':''}>Matin uniquement</option>
+                <option value="après-midi" ${t.duree==='après-midi'?'selected':''}>Après-midi uniquement</option>
+                <option value="journée" ${t.duree==='journée'?'selected':''}>Journée (1 seul tour)</option>
+                <option value="matin et après-midi" ${t.duree==='matin et après-midi'?'selected':''}>Matin et après-midi (2 tours)</option>
             </select>
+            <small class="text-muted">
+                "Journée" = 1 case (camion part toute la journée)<br>
+                "Matin et après-midi" = 2 cases séparées (le camion rentre le midi)
+            </small>
         </div>
     `;
     modal.show();
@@ -869,22 +889,52 @@ function renderPlanning(data, debut, fin) {
     html += `</tr></thead><tbody>`;
 
     tournees.forEach(t => {
-        html += `<tr><td><strong>${t.nom}</strong><br><small class="text-muted">${t.duree}</small></td>`;
+        // Récupérer le logo du type de tournée
+        let logoTournee = '';
+        if (t.type_tournee) {
+            const typeTournee = (config.types_tournee || []).find(type => type.nom === t.type_tournee);
+            if (typeTournee && typeTournee.logo) {
+                if (typeTournee.logo.startsWith('uploads/')) {
+                    // C'est une image uploadée
+                    logoTournee = `<br><img src="${typeTournee.logo}" alt="${typeTournee.nom}" style="width: 32px; height: 32px; object-fit: contain;">`;
+                } else {
+                    // C'est un emoji
+                    logoTournee = `<br><span style="font-size: 1.5rem;">${typeTournee.logo}</span>`;
+                }
+            }
+        }
+        
+        html += `<tr><td><strong>${t.nom}</strong>${logoTournee}<br><small class="text-muted">${t.duree || 'non défini'}</small></td>`;
         dates.forEach(d => {
             const dateStr = d.toISOString().split('T')[0];
             html += `<td class="p-1">`;
             
-            if (t.duree === 'journee' || t.duree === 'matin') {
+            // Gestion selon la durée
+            if (t.duree === 'journée') {
+                // Journée : UNE SEULE case pour toute la journée
+                const attrMatin = data.find(x => x.date === dateStr && x.periode === 'matin' && x.tournee_id == t.id);
+                html += createCellContent(t, attrMatin, dateStr, 'journée');
+            } else if (t.duree === 'matin et après-midi') {
+                // Matin et après-midi : DEUX cases séparées (2 tours)
                 const attrMatin = data.find(x => x.date === dateStr && x.periode === 'matin' && x.tournee_id == t.id);
                 html += createCellContent(t, attrMatin, dateStr, 'matin');
-            }
-            
-            if (t.duree === 'journee' || t.duree === 'apres-midi') {
+                html += '<div style="height: 3px;"></div>'; // Séparateur
                 const attrAM = data.find(x => x.date === dateStr && x.periode === 'apres-midi' && x.tournee_id == t.id);
-                // Ajouter un petit espace si c'est une journée complète
-                if (t.duree === 'journee') {
-                    html += '<div style="height: 3px;"></div>';
-                }
+                html += createCellContent(t, attrAM, dateStr, 'apres-midi');
+            } else if (t.duree === 'matin') {
+                // Matin uniquement
+                const attrMatin = data.find(x => x.date === dateStr && x.periode === 'matin' && x.tournee_id == t.id);
+                html += createCellContent(t, attrMatin, dateStr, 'matin');
+            } else if (t.duree === 'après-midi') {
+                // Après-midi uniquement
+                const attrAM = data.find(x => x.date === dateStr && x.periode === 'apres-midi' && x.tournee_id == t.id);
+                html += createCellContent(t, attrAM, dateStr, 'apres-midi');
+            } else {
+                // CAS PAR DÉFAUT : si duree est null/vide ou inconnue, afficher matin + après-midi
+                const attrMatin = data.find(x => x.date === dateStr && x.periode === 'matin' && x.tournee_id == t.id);
+                html += createCellContent(t, attrMatin, dateStr, 'matin');
+                html += '<div style="height: 3px;"></div>'; // Séparateur
+                const attrAM = data.find(x => x.date === dateStr && x.periode === 'apres-midi' && x.tournee_id == t.id);
                 html += createCellContent(t, attrAM, dateStr, 'apres-midi');
             }
             
@@ -916,7 +966,39 @@ function createCellContent(tournee, attr, date, periode) {
         else if (score >= 40) badgeClass = 'bg-warning';
         else if (score > 0) badgeClass = 'bg-danger';
         
-        scoreDisplay = `<div class="mt-1">
+        // Trouver le conducteur pour récupérer son statut
+        const conducteur = AppState.conducteurs.find(c => c.id == attr.conducteur_id);
+        let statutBadge = '';
+        
+        if (conducteur) {
+            const statut = conducteur.statut_entreprise || 'CDI';
+            let statutClass = 'bg-secondary';
+            let statutLabel = statut;
+            
+            switch(statut.toLowerCase()) {
+                case 'cdi':
+                    statutClass = 'bg-primary';
+                    statutLabel = 'CDI';
+                    break;
+                case 'cdd':
+                    statutClass = 'bg-info';
+                    statutLabel = 'CDD';
+                    break;
+                case 'interimaire':
+                    statutClass = 'bg-warning text-dark';
+                    statutLabel = 'INT';
+                    break;
+                case 'sous-traitant':
+                    statutClass = 'bg-secondary';
+                    statutLabel = 'ST';
+                    break;
+            }
+            
+            statutBadge = `<span class="badge ${statutClass} small me-1" style="font-size: 0.6rem;">${statutLabel}</span>`;
+        }
+        
+        scoreDisplay = `<div class="mt-1 d-flex align-items-center justify-content-center gap-1">
+            ${statutBadge}
             <span class="badge ${badgeClass} small">${score}/100</span>
         </div>`;
     } else {
@@ -926,10 +1008,28 @@ function createCellContent(tournee, attr, date, periode) {
         </div>`;
     }
     
+    // Libellé de la période (AFFICHAGE avec accents)
+    let periodeLabel = '';
+    if (periode === 'journée') {
+        periodeLabel = '📅 Journée';
+    } else if (periode === 'matin') {
+        periodeLabel = '🌅 Matin';
+    } else if (periode === 'apres-midi') {
+        periodeLabel = '🌆 Après-midi';
+    } else {
+        periodeLabel = '🌆 Après-midi'; // par défaut
+    }
+    
+    // Période en base de données (SANS accent pour compatibilité ENUM)
+    let periodeData = periode;
+    if (periode === 'journée') {
+        periodeData = 'matin'; // une journée s'enregistre comme 'matin' en base
+    }
+    
     return `<div class="p-1 rounded ${cellClass} planning-cell">
-        <small class="text-muted d-block" style="font-size: 0.7rem; line-height: 1;">${periode === 'matin' ? '🌅 Matin' : '🌆 Après-midi'}</small>
+        <small class="text-muted d-block" style="font-size: 0.7rem; line-height: 1;">${periodeLabel}</small>
         <select class="form-select form-select-sm mb-1" onchange="sauvegarderAttribution(this)" 
-                data-date="${date}" data-periode="${periode}" data-tournee="${tournee.id}" 
+                data-date="${date}" data-periode="${periodeData}" data-tournee="${tournee.id}" 
                 data-old-value="${attr?.conducteur_id || ''}" 
                 style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">
             <option value="">-- Libre --</option>
@@ -1022,23 +1122,63 @@ async function sauvegarderAttribution(select) {
     
     // VÉRIFICATION 3 : Conflit - même conducteur sur la MÊME PÉRIODE du même jour
     if (conducteurId) {
-        // Tous les selects pour cette date ET CETTE PÉRIODE, SAUF celui en cours
-        const selects = Array.from(document.querySelectorAll(`select[data-date="${date}"][data-periode="${periode}"]`))
-            .filter(s => s !== select); // Exclure le select actuel
+        // Récupérer toutes les attributions du conducteur pour cette date
+        const toutesAttributions = AppState.planningFullData.filter(attr => 
+            attr.date === date && attr.conducteur_id == conducteurId
+        );
         
-        // Comptage des occurences sur la même période
-        const occurrences = selects.filter(s => +s.value === conducteurId);
+        // Trouver la tournée actuelle
+        const tourneeActuelle = tournees.find(t => t.id == tourneeId);
         
-        if (occurrences.length > 0) {
-            // Conflit détecté : même conducteur, même jour, même période, autre tournée
-            occurrences.forEach(s => {
-                s.closest('div').classList.add('conflict');
-            });
-            select.closest('div').classList.add('conflict');
-            showToast('Conflit', `Ce conducteur est déjà affecté ${periode === 'matin' ? 'le matin' : 'l\'après-midi'} sur une autre tournée.`, 'danger');
-            // Annuler la sélection
-            select.value = '';
-            return;
+        // Vérifier s'il y a des conflits
+        for (const attr of toutesAttributions) {
+            // Ignorer si c'est la même tournée (modification en cours)
+            if (attr.tournee_id == tourneeId && attr.periode === periode) continue;
+            
+            const tourneeDeja = tournees.find(t => t.id == attr.tournee_id);
+            if (!tourneeDeja) continue;
+            
+            // CONFLIT 1 : Le conducteur est déjà sur une tournée "journée"
+            if (tourneeDeja.duree === 'journée') {
+                const confirmMsg = `⚠️ CONFLIT DÉTECTÉ\n\n${conducteurs.find(c => c.id === conducteurId)?.prenom || 'Ce conducteur'} est déjà affecté à une tournée JOURNÉE "${tourneeDeja.nom}" le ${new Date(date).toLocaleDateString('fr-FR')}.\n\nUne tournée "journée" occupe TOUTE la journée (matin + après-midi).\n\nVoulez-vous :\n• SUPPRIMER l'attribution de "${tourneeDeja.nom}"\n• ET affecter à "${tourneeActuelle?.nom || 'cette tournée'}" (${periode}) ?\n\n⚠️ Cela libérera le conducteur de sa tournée journée.`;
+                
+                if (!confirm(confirmMsg)) {
+                    select.value = '';
+                    return;
+                }
+                
+                // Supprimer l'ancienne attribution
+                await apiCall('delete_attribution', 'POST', { id: attr.id });
+                showToast('Modification', `Attribution à "${tourneeDeja.nom}" (journée) supprimée`, 'warning');
+                // Continuer avec la nouvelle attribution
+                break;
+            }
+            
+            // CONFLIT 2 : On veut affecter à une tournée "journée" mais le conducteur a déjà des attributions
+            if (tourneeActuelle && tourneeActuelle.duree === 'journée') {
+                const confirmMsg = `⚠️ CONFLIT DÉTECTÉ\n\n${conducteurs.find(c => c.id === conducteurId)?.prenom || 'Ce conducteur'} est déjà affecté à "${tourneeDeja.nom}" (${attr.periode}) le ${new Date(date).toLocaleDateString('fr-FR')}.\n\nVous voulez l'affecter à une tournée JOURNÉE "${tourneeActuelle.nom}" qui occupe TOUTE la journée.\n\nVoulez-vous :\n• SUPPRIMER l'attribution de "${tourneeDeja.nom}" (${attr.periode})\n• ET affecter à "${tourneeActuelle.nom}" (journée complète) ?\n\n⚠️ Cela libérera le conducteur de "${tourneeDeja.nom}".`;
+                
+                if (!confirm(confirmMsg)) {
+                    select.value = '';
+                    return;
+                }
+                
+                // Supprimer toutes les attributions du jour pour ce conducteur
+                for (const attrASupprimer of toutesAttributions) {
+                    await apiCall('delete_attribution', 'POST', { id: attrASupprimer.id });
+                }
+                showToast('Modification', `Attributions du jour supprimées`, 'warning');
+                // Continuer avec la nouvelle attribution
+                break;
+            }
+            
+            // CONFLIT 3 : Même période, tournées différentes (l'ancien comportement)
+            if (attr.periode === periode) {
+                select.closest('div').classList.add('conflict');
+                showToast('Conflit', `Ce conducteur est déjà affecté ${periode === 'matin' ? 'le matin' : 'l\'après-midi'} sur "${tourneeDeja.nom}".`, 'danger');
+                select.value = '';
+                return;
+            }
         }
     }
     
@@ -1196,7 +1336,7 @@ async function actualiserPlanning() {
         return;
     }
 
-    if (!confirm(`Actualiser le planning du ${debut} au ${fin} ?\n\nCette opération va :\n- Supprimer les attributions invalides\n- Réattribuer les conducteurs selon les règles (titulaires prioritaires)\n- Compléter les créneaux vides`)) {
+    if (!confirm(`Actualiser le planning du ${debut} au ${fin} ?\n\nCette opération va :\n- ✖️ Supprimer les attributions invalides (conducteurs indisponibles, permis manquants)\n- 🔄 Recalculer tous les scores existants\n- ⭐ Réattribuer les titulaires en priorité sur leur tournée\n- 🎯 Compléter les créneaux vides avec les meilleurs remplaçants\n- 🔃 Recharger les données (conducteurs, tournées, planning)`)) {
         return;
     }
 
@@ -1216,19 +1356,22 @@ async function actualiserPlanning() {
             if (!attribution.conducteur_id) continue;
             
             let doitSupprimer = false;
+            let raison = '';
             
             // Trouver le conducteur
             const conducteur = conducteurs.find(c => c.id == attribution.conducteur_id);
             if (!conducteur) {
                 doitSupprimer = true;
+                raison = 'Conducteur introuvable';
             } else {
                 // Vérifier si c'est un titulaire sur une mauvaise tournée
                 if (conducteur.tournee_titulaire && conducteur.tournee_titulaire != attribution.tournee_id) {
                     doitSupprimer = true;
-                    console.log(`Conducteur ${conducteur.prenom} ${conducteur.nom} n'est plus titulaire de la tournée ${attribution.tournee_id}`);
+                    raison = `Titulaire de T${conducteur.tournee_titulaire}, pas de T${attribution.tournee_id}`;
+                    console.log(`Conducteur ${conducteur.prenom} ${conducteur.nom} ${raison}`);
                 }
                 
-                // Vérifier la disponibilité du conducteur
+                // Vérifier la disponibilité du conducteur (seulement si pas déjà marqué à supprimer)
                 if (!doitSupprimer) {
                     const scoreResult = await apiCall(
                         `calculer_score&conducteur_id=${attribution.conducteur_id}&tournee_id=${attribution.tournee_id}&date=${attribution.date}&periode=${attribution.periode}`
@@ -1236,11 +1379,13 @@ async function actualiserPlanning() {
                     
                     if (!scoreResult.data.disponible) {
                         doitSupprimer = true;
+                        raison = scoreResult.data.details || 'Non disponible';
                     }
                 }
             }
             
             if (doitSupprimer) {
+                console.log(`Suppression attribution: ${conducteur?.prenom} ${conducteur?.nom} sur T${attribution.tournee_id} - ${raison}`);
                 await apiCall('delete_attribution', 'POST', { id: attribution.id });
                 suppressions++;
             }
@@ -1287,6 +1432,9 @@ async function actualiserPlanning() {
         
         showToast('Actualisation terminée', message, 'success');
         
+        // Recharger les conducteurs et tournées pour mettre à jour AppState
+        await chargerConducteurs();
+        await chargerTournees();
         await chargerPlanning();
         
     } catch (error) {
@@ -1342,15 +1490,36 @@ function renderConfig() {
     if (lt) {
         const typesTries = (config.types_tournee || []).sort((a, b) => a.ordre - b.ordre);
         typesTries.forEach(t => {
+            // Affichage du logo : emoji OU image
+            let logoDisplay = '';
+            if (t.logo) {
+                if (t.logo.startsWith('uploads/')) {
+                    // C'est une image uploadée
+                    logoDisplay = `<img src="${t.logo}" alt="${t.nom}" style="width: 24px; height: 24px; object-fit: contain;" class="me-2">`;
+                } else {
+                    // C'est un emoji
+                    logoDisplay = `<span style="font-size: 1.2rem;" class="me-2">${t.logo}</span>`;
+                }
+            }
+            
             lt.innerHTML += `<div class="d-flex justify-content-between align-items-center border-bottom py-2">
                 <div class="flex-grow-1">
                     <span class="badge bg-secondary me-2">${t.ordre}</span>
+                    ${logoDisplay}
                     <span>${t.nom}</span>
                 </div>
                 <div class="btn-group btn-group-sm">
+                    <input type="text" class="form-control form-control-sm" style="width:50px" 
+                           value="${t.logo && !t.logo.startsWith('uploads/') ? t.logo : ''}" placeholder="📦" 
+                           onchange="modifierLogoTypeTournee('${t.nom}', this.value)"
+                           title="Emoji/Icône (ou vide si image)">
+                    <button class="btn btn-outline-primary" onclick="afficherModalUploadLogoTournee('${t.nom}')" title="Upload image">
+                        <i class="bi bi-image"></i>
+                    </button>
                     <input type="number" class="form-control form-control-sm" style="width:60px" 
                            value="${t.ordre}" min="1" 
-                           onchange="modifierOrdreTypeTournee('${t.nom}', this.value)">
+                           onchange="modifierOrdreTypeTournee('${t.nom}', this.value)"
+                           title="Ordre d'affichage">
                     <button class="btn btn-outline-danger" onclick="supprimerTypeTournee('${t.nom}')">
                         <i class="bi bi-trash"></i>
                     </button>
@@ -1371,8 +1540,7 @@ function renderConfig() {
 
 function chargerCriteresIA() {
     const poidsConnaissance = config.poids_connaissance || 80;
-    const poidsExperience = config.poids_experience || 2;
-    const poidsDisponibilite = config.poids_disponibilite || 60;
+    const poidsExperience = config.poids_experience || 2.5; // 100/100 à 40 ans
     const penaliteInterimaire = config.penalite_interimaire || -50;
     
     document.getElementById('poids-connaissance').value = poidsConnaissance;
@@ -1380,9 +1548,6 @@ function chargerCriteresIA() {
     
     document.getElementById('poids-experience').value = poidsExperience;
     document.getElementById('label-poids-experience').textContent = poidsExperience;
-    
-    document.getElementById('poids-disponibilite').value = poidsDisponibilite;
-    document.getElementById('label-poids-disponibilite').textContent = poidsDisponibilite;
     
     document.getElementById('penalite-interimaire').value = penaliteInterimaire;
     document.getElementById('label-penalite-interimaire').textContent = penaliteInterimaire;
@@ -1392,7 +1557,6 @@ async function sauvegarderCriteresIA() {
     const criteres = {
         poids_connaissance: +document.getElementById('poids-connaissance').value,
         poids_experience: +document.getElementById('poids-experience').value,
-        poids_disponibilite: +document.getElementById('poids-disponibilite').value,
         penalite_interimaire: +document.getElementById('penalite-interimaire').value
     };
     
@@ -1458,8 +1622,10 @@ async function supprimerVehicule(val) {
 
 async function ajouterTypeTournee() {
     const inputNom = document.getElementById('nouveau-type-tournee');
+    const inputLogo = document.getElementById('logo-type-tournee');
     const inputOrdre = document.getElementById('ordre-type-tournee');
     const nom = inputNom.value.trim();
+    const logo = inputLogo.value.trim();
     const ordre = parseInt(inputOrdre.value) || 999;
     
     if (!nom) return;
@@ -1470,13 +1636,14 @@ async function ajouterTypeTournee() {
         return;
     }
     
-    config.types_tournee.push({ nom, ordre });
+    config.types_tournee.push({ nom, logo, ordre });
     // Trier par ordre
     config.types_tournee.sort((a, b) => a.ordre - b.ordre);
     
     await apiCall('set_config', 'POST', { types_tournee: config.types_tournee });
     showToast('Succès', 'Type de tournée ajouté', 'success');
     inputNom.value = '';
+    inputLogo.value = '';
     inputOrdre.value = '';
     chargerConfig();
 }
@@ -1496,6 +1663,124 @@ async function modifierOrdreTypeTournee(nom, nouvelOrdre) {
         await apiCall('set_config', 'POST', { types_tournee: config.types_tournee });
         showToast('Succès', 'Ordre modifié', 'success');
         chargerConfig();
+    }
+}
+
+async function modifierLogoTypeTournee(nom, nouveauLogo) {
+    const type = config.types_tournee.find(t => t.nom === nom);
+    if (type) {
+        type.logo = nouveauLogo.trim();
+        await apiCall('set_config', 'POST', { types_tournee: config.types_tournee });
+        showToast('Succès', 'Logo modifié', 'success');
+        chargerConfig();
+        // Recharger le planning pour afficher le nouveau logo
+        if (AppState.selectedPeriod.debut && AppState.selectedPeriod.fin) {
+            renderPlanningWithNavigation();
+        }
+    }
+}
+
+function afficherModalUploadLogoTournee(typeNom) {
+    // Créer une modal dynamique pour l'upload
+    const modalHtml = `
+        <div class="modal fade" id="modalUploadLogoTournee" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Upload logo pour "${typeNom}"</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">Fichier image (JPG, PNG, GIF, BMP - max 1MB)</label>
+                            <input type="file" class="form-control" id="logo-tournee-file" accept="image/jpeg,image/png,image/gif,image/bmp">
+                        </div>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> L'image sera redimensionnée automatiquement pour s'adapter au planning.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                        <button type="button" class="btn btn-primary" onclick="uploadLogoTournee('${typeNom}')">
+                            <i class="bi bi-upload me-1"></i>Uploader
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Supprimer l'ancienne modal si elle existe
+    const oldModal = document.getElementById('modalUploadLogoTournee');
+    if (oldModal) oldModal.remove();
+    
+    // Ajouter la nouvelle modal
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    
+    // Afficher la modal
+    const modal = new bootstrap.Modal(document.getElementById('modalUploadLogoTournee'));
+    modal.show();
+}
+
+async function uploadLogoTournee(typeNom) {
+    const fileInput = document.getElementById('logo-tournee-file');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        showToast('Erreur', 'Veuillez sélectionner un fichier', 'warning');
+        return;
+    }
+
+    // Vérification de la taille
+    if (file.size > 1 * 1024 * 1024) {
+        showToast('Erreur', 'Le fichier est trop volumineux (max 1MB)', 'danger');
+        return;
+    }
+
+    // Vérification du type
+    if (!['image/jpeg', 'image/png', 'image/gif', 'image/bmp'].includes(file.type)) {
+        showToast('Erreur', 'Format de fichier non supporté (JPG, PNG, GIF, BMP uniquement)', 'danger');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('logo', file);
+    formData.append('type_nom', typeNom);
+
+    try {
+        const response = await fetch('upload_logo_tournee.php', {
+            method: 'POST',
+            body: formData
+        });
+
+        const respText = await response.text();
+        let result;
+        try {
+            result = JSON.parse(respText);
+        } catch (e) {
+            throw new Error('Réponse serveur invalide: ' + respText);
+        }
+        
+        if (result && result.success) {
+            showToast('Succès', 'Logo uploadé avec succès', 'success');
+            
+            // Fermer la modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('modalUploadLogoTournee'));
+            if (modal) modal.hide();
+            
+            // Recharger la config pour afficher le nouveau logo
+            await chargerConfig();
+            
+            // Recharger le planning si affiché
+            if (AppState.selectedPeriod.debut && AppState.selectedPeriod.fin) {
+                renderPlanningWithNavigation();
+            }
+        } else {
+            throw new Error(result ? (result.error || 'Erreur serveur') : 'Réponse serveur vide');
+        }
+    } catch (error) {
+        console.error('Erreur upload logo tournée:', error);
+        showToast('Erreur', error.message || 'Erreur lors de l\'upload', 'danger');
     }
 }
 

@@ -268,14 +268,6 @@ $user = $_SESSION['user'];
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label small d-flex justify-content-between">
-                                        <span>Disponibilité</span>
-                                        <span class="badge bg-primary" id="label-poids-disponibilite">60</span>
-                                    </label>
-                                    <input type="range" id="poids-disponibilite" class="form-range" min="0" max="100" step="5"
-                                           oninput="document.getElementById('label-poids-disponibilite').textContent = this.value">
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label small d-flex justify-content-between">
                                         <span>Pénalité intérimaire</span>
                                         <span class="badge bg-danger" id="label-penalite-interimaire">-50</span>
                                     </label>
@@ -371,14 +363,25 @@ $user = $_SESSION['user'];
                             </div>
                             <div class="card-body">
                                 <div id="liste-types-tournee" class="mb-3"></div>
-                                <div class="input-group">
-                                    <input type="text" id="nouveau-type-tournee" class="form-control" placeholder="Ex: Express, Messagerie">
-                                    <input type="number" id="ordre-type-tournee" class="form-control" style="max-width:70px" placeholder="Ordre" min="1">
-                                    <button class="btn btn-info" onclick="ajouterTypeTournee()">
-                                        <i class="bi bi-plus-circle"></i>
-                                    </button>
+                                <div class="row g-2">
+                                    <div class="col">
+                                        <input type="text" id="nouveau-type-tournee" class="form-control" placeholder="Ex: Express, Messagerie">
+                                    </div>
+                                    <div class="col-auto">
+                                        <input type="text" id="logo-type-tournee" class="form-control" style="width:60px" placeholder="📦" title="Emoji/Icône">
+                                    </div>
+                                    <div class="col-auto">
+                                        <input type="number" id="ordre-type-tournee" class="form-control" style="width:85px" placeholder="Ordre" min="1">
+                                    </div>
+                                    <div class="col-auto">
+                                        <button class="btn btn-info" onclick="ajouterTypeTournee()">
+                                            <i class="bi bi-plus-circle"></i>
+                                        </button>
+                                    </div>
                                 </div>
-                                <small class="text-muted">L'ordre détermine la priorité d'affichage dans le planning</small>
+                                <small class="text-muted d-block mt-2">
+                                    <i class="bi bi-info-circle"></i> Ajoutez un emoji/icône (📦 📨 🚚 ✈️ etc.) qui apparaîtra dans le planning
+                                </small>
                             </div>
                         </div>
 
@@ -606,7 +609,14 @@ $user = $_SESSION['user'];
                                                 <li><strong>Permis requis :</strong> Sélection multiple des permis nécessaires</li>
                                                 <li><strong>Type de véhicule</strong></li>
                                                 <li><strong>Jours actifs :</strong> Quels jours de la semaine cette tournée fonctionne</li>
-                                                <li><strong>Périodes :</strong> Matin, Après-midi, ou les deux</li>
+                                                <li><strong>Durée :</strong> 4 options disponibles :
+                                                    <ul>
+                                                        <li><em>Matin</em> - Occupe 1 ligne (période matin uniquement)</li>
+                                                        <li><em>Après-midi</em> - Occupe 1 ligne (période après-midi uniquement)</li>
+                                                        <li><em>Journée</em> - Occupe 1 ligne (tournée sur toute la journée)</li>
+                                                        <li><em>Matin et après-midi</em> - Occupe 2 lignes distinctes dans le planning (1 ligne matin + 1 ligne après-midi)</li>
+                                                    </ul>
+                                                </li>
                                             </ul>
                                         </li>
                                     </ol>

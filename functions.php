@@ -46,7 +46,12 @@ function getConducteurs($withPerformance = false) {
     try {
         $sql = "SELECT c.*, 
                 COALESCE(AVG(p.score_ia), 0) as score_moyen,
-                COUNT(DISTINCT p.id) as nb_attributions
+                COUNT(DISTINCT p.id) as nb_attributions,
+                CASE 
+                    WHEN c.date_embauche IS NOT NULL 
+                    THEN TIMESTAMPDIFF(YEAR, c.date_embauche, CURDATE())
+                    ELSE c.experience 
+                END as experience_calculee
                 FROM " . DB_PREFIX . "conducteurs c
                 LEFT JOIN " . DB_PREFIX . "planning p ON c.id = p.conducteur_id";
         
@@ -56,7 +61,14 @@ function getConducteurs($withPerformance = false) {
         
         $sql .= " GROUP BY c.id ORDER BY c.nom, c.prenom";
         
-        return Database::prepare($sql)->fetchAll();
+        $conducteurs = Database::prepare($sql)->fetchAll();
+        
+        // Remplacer experience par experience_calculee
+        foreach ($conducteurs as &$c) {
+            $c['experience'] = $c['experience_calculee'];
+        }
+        
+        return $conducteurs;
     } catch (Exception $e) {
         error_log("Erreur getConducteurs: " . $e->getMessage());
         throw new Exception("Erreur lors de la récupération des conducteurs");
@@ -67,13 +79,25 @@ function getConducteur($id) {
     try {
         $sql = "SELECT c.*, 
                 COALESCE(AVG(p.score_ia), 0) as score_moyen,
-                COUNT(DISTINCT p.id) as nb_attributions
+                COUNT(DISTINCT p.id) as nb_attributions,
+                CASE 
+                    WHEN c.date_embauche IS NOT NULL 
+                    THEN TIMESTAMPDIFF(YEAR, c.date_embauche, CURDATE())
+                    ELSE c.experience 
+                END as experience_calculee
                 FROM " . DB_PREFIX . "conducteurs c
                 LEFT JOIN " . DB_PREFIX . "planning p ON c.id = p.conducteur_id
                 WHERE c.id = ?
                 GROUP BY c.id";
                 
-        return Database::prepare($sql, [$id])->fetch();
+        $conducteur = Database::prepare($sql, [$id])->fetch();
+        
+        if ($conducteur) {
+            // Remplacer experience par experience_calculee
+            $conducteur['experience'] = $conducteur['experience_calculee'];
+        }
+        
+        return $conducteur;
     } catch (Exception $e) {
         error_log("Erreur getConducteur: " . $e->getMessage());
         throw new Exception("Erreur lors de la récupération du conducteur");
@@ -88,16 +112,17 @@ function addConducteur($data) {
         }
 
         $sql = "INSERT INTO " . DB_PREFIX . "conducteurs
-                (nom, prenom, permis, contact, experience, statut_entreprise, 
+                (nom, prenom, permis, contact, date_embauche, experience, statut_entreprise, 
                 tournees_maitrisees, tournee_titulaire, repos_recurrents, 
                 conges, statut_temporaire, statut_temporaire_fin, date_creation)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
         
         $params = [
             $data['nom'],
             $data['prenom'],
             is_array($data['permis']) ? json_encode($data['permis']) : $data['permis'],
             $data['contact'] ?? null,
+            $data['date_embauche'] ?? null,
             $data['experience'] ?? 0,
             $data['statut_entreprise'] ?? 'CDI',
             json_encode($data['tournees_maitrisees'] ?? []),
@@ -120,7 +145,7 @@ function addConducteur($data) {
 function updateConducteur($id, $data) {
     $pdo = Database::getInstance();
     $sql = "UPDATE " . DB_PREFIX . "conducteurs
-            SET nom=?, prenom=?, permis=?, contact=?, experience=?, statut_entreprise=?,
+            SET nom=?, prenom=?, permis=?, contact=?, date_embauche=?, experience=?, statut_entreprise=?,
                 tournees_maitrisees=?, tournee_titulaire=?, repos_recurrents=?, conges=?, 
                 statut_temporaire=?, statut_temporaire_fin=?
             WHERE id=?";
@@ -130,6 +155,7 @@ function updateConducteur($id, $data) {
         $data['prenom'],
         is_array($data['permis']) ? json_encode($data['permis']) : $data['permis'],
         $data['contact'] ?? null,
+        $data['date_embauche'] ?? null,
         $data['experience'] ?? 0,
         $data['statut_entreprise'] ?? 'CDI',
         json_encode($data['tournees_maitrisees'] ?? []),
@@ -152,16 +178,43 @@ function deleteConducteur($id) {
 
 function getTournees() {
     $pdo = Database::getInstance();
-    // Tri automatique par l'ordre du type de tournée depuis les paramètres
-    $sql = "SELECT t.*, 
-            COALESCE(
-                (SELECT valeur FROM " . DB_PREFIX . "config WHERE cle = CONCAT('type_tournee_', t.type_tournee, '_ordre')),
-                999
-            ) as ordre_type
-            FROM " . DB_PREFIX . "tournees t
-            ORDER BY ordre_type ASC, t.nom ASC";
+    
+    // Récupérer toutes les tournées
+    $sql = "SELECT * FROM " . DB_PREFIX . "tournees";
     $stmt = $pdo->query($sql);
-    return $stmt->fetchAll();
+    $tournees = $stmt->fetchAll();
+    
+    // Récupérer les types de tournées avec leur ordre
+    $typesConfig = getConfig('types_tournee');
+    $typesOrdre = [];
+    
+    if (is_array($typesConfig)) {
+        foreach ($typesConfig as $type) {
+            if (isset($type['nom']) && isset($type['ordre'])) {
+                $typesOrdre[$type['nom']] = (int)$type['ordre'];
+            }
+        }
+    }
+    
+    // Trier les tournées par ordre de type (puis par nom)
+    usort($tournees, function($a, $b) use ($typesOrdre) {
+        $ordreA = isset($a['type_tournee']) && isset($typesOrdre[$a['type_tournee']]) 
+            ? $typesOrdre[$a['type_tournee']] 
+            : 999;
+        $ordreB = isset($b['type_tournee']) && isset($typesOrdre[$b['type_tournee']]) 
+            ? $typesOrdre[$b['type_tournee']] 
+            : 999;
+        
+        // Comparer d'abord par ordre
+        if ($ordreA != $ordreB) {
+            return $ordreA - $ordreB;
+        }
+        
+        // Si même ordre, comparer par nom
+        return strcmp($a['nom'] ?? '', $b['nom'] ?? '');
+    });
+    
+    return $tournees;
 }
 
 function getTournee($id) {
@@ -185,28 +238,38 @@ function addTournee($data) {
         $data['type_vehicule'] ?? null,
         $permisJson,
         $data['difficulte'] ?? 1,
-        $data['duree'] ?? 'journee'
+        $data['duree'] ?? 'journée'
     ]);
     return $pdo->lastInsertId();
 }
 
 function updateTournee($id, $data) {
     $pdo = Database::getInstance();
+    
+    // Log pour déboguer
+    error_log("updateTournee - ID: $id, Durée: " . ($data['duree'] ?? 'NULL'));
+    
     $sql = "UPDATE " . DB_PREFIX . "tournees
             SET nom=?, type_tournee=?, zone_geo=?, type_vehicule=?, permis_requis=?, difficulte=?, duree=?
             WHERE id=?";
     $stmt = $pdo->prepare($sql);
     $permisJson = isset($data['permis_requis']) ? json_encode($data['permis_requis']) : '[]';
-    return $stmt->execute([
+    
+    $result = $stmt->execute([
         $data['nom'],
         $data['type_tournee'] ?? null,
         $data['zone_geo'] ?? null,
         $data['type_vehicule'] ?? null,
         $permisJson,
         $data['difficulte'] ?? 1,
-        $data['duree'] ?? 'journee',
+        $data['duree'] ?? 'journée',
         $id
     ]);
+    
+    // Log du résultat
+    error_log("updateTournee - Résultat: " . ($result ? 'SUCCESS' : 'FAILED'));
+    
+    return $result;
 }
 
 function deleteTournee($id) {
@@ -428,8 +491,7 @@ function calculerScoreConducteur($conducteurId, $tourneeId, $date, $periode) {
     
     // Récupérer les critères configurables
     $poidsConnaissance = getConfig('poids_connaissance') ?: 80;
-    $poidsExperience = getConfig('poids_experience') ?: 2;
-    $poidsDisponibilite = getConfig('poids_disponibilite') ?: 60;
+    $poidsExperience = getConfig('poids_experience') ?: 2.5; // 100/100 à 40 ans
     $penaliteInterimaire = getConfig('penalite_interimaire') ?: -50;
     
     $score = 0;
@@ -456,11 +518,7 @@ function calculerScoreConducteur($conducteurId, $tourneeId, $date, $periode) {
     $score += $pointsExp;
     $details[] = "Exp. {$conducteur['experience']} ans (+{$pointsExp})";
     
-    // 4. Bonus disponibilité
-    $score += $poidsDisponibilite;
-    $details[] = "Disponible (+{$poidsDisponibilite})";
-    
-    // 5. Bonus/Malus selon statut
+    // 4. Bonus/Malus selon statut
     if ($conducteur['statut_entreprise'] === 'CDI') {
         $score += 10;
         $details[] = "CDI (+10)";
@@ -470,8 +528,8 @@ function calculerScoreConducteur($conducteurId, $tourneeId, $date, $periode) {
     }
     
     // Score final normalisé sur 100
-    // scoreMax = Connaissance + Expérience max (100) + Disponibilité + CDI bonus (10)
-    $scoreMax = $poidsConnaissance + 100 + $poidsDisponibilite + 10;
+    // scoreMax = Connaissance + Expérience max (100) + CDI bonus (10)
+    $scoreMax = $poidsConnaissance + 100 + 10;
     $scoreFinal = max(0, min(100, round($score * 100 / $scoreMax)));
     
     return [
@@ -830,25 +888,46 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
             
             // Déterminer les périodes de la tournée
             $periodes = [];
-            if ($tournee['duree'] === 'matin' || $tournee['duree'] === 'journee') {
+            if ($tournee['duree'] === 'matin' || $tournee['duree'] === 'journée') {
                 $periodes[] = 'matin';
             }
-            if ($tournee['duree'] === 'apres-midi' || $tournee['duree'] === 'journee') {
+            if ($tournee['duree'] === 'après-midi' || $tournee['duree'] === 'journée') {
+                $periodes[] = 'apres-midi';
+            }
+            // Cas spécial : "matin et après-midi" = 2 tours séparés (comme journée mais 2 cases distinctes)
+            if ($tournee['duree'] === 'matin et après-midi') {
+                $periodes[] = 'matin';
                 $periodes[] = 'apres-midi';
             }
             
+            // CAS PAR DÉFAUT : si duree est null/vide ou valeur inconnue, traiter comme "matin et après-midi"
+            if (empty($periodes) && empty($tournee['duree'])) {
+                $periodes[] = 'matin';
+                $periodes[] = 'apres-midi';
+                $logs[] = "    ⚠️ Durée non définie, traité comme matin et après-midi";
+            }
+            
             foreach ($periodes as $periode) {
-                // Vérifier si la tournée n'est pas déjà attribuée
-                if (getAttribution($dateStr, $periode, $tournee['id'])) {
-                    $logs[] = "    [{$periode}] Déjà attribué";
-                    continue;
+                // Vérifier si la tournée est déjà attribuée
+                $attributionExistante = getAttribution($dateStr, $periode, $tournee['id']);
+                
+                if ($attributionExistante) {
+                    // Si déjà attribué AU TITULAIRE, on ne touche pas
+                    if ($attributionExistante['conducteur_id'] == $titulaire['id']) {
+                        $logs[] = "    [{$periode}] Déjà attribué au titulaire";
+                        continue;
+                    }
+                    // Sinon, on va REMPLACER par le titulaire (suppression puis réattribution)
+                    $logs[] = "    [{$periode}] Remplace l'attribution existante par le titulaire";
+                    deleteAttribution($attributionExistante['id']);
                 }
                 
                 // Vérifier si le titulaire n'est pas déjà attribué ailleurs
                 $dejaAttribue = getConducteurAttribution($titulaire['id'], $dateStr, $periode);
                 if ($dejaAttribue) {
-                    $logs[] = "    [{$periode}] Titulaire déjà occupé ailleurs";
-                    continue; // Le titulaire est déjà occupé sur une autre tournée
+                    // LE TITULAIRE EST SUR UNE AUTRE TOURNÉE : on le retire pour le remettre sur SA tournée
+                    $logs[] = "    [{$periode}] ⚠️ Titulaire occupé sur T{$dejaAttribue['tournee_id']}, on le retire";
+                    deleteAttribution($dejaAttribue['id']);
                 }
                 
                 // Vérifier la disponibilité du titulaire
@@ -874,18 +953,46 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
         foreach ($tournees as $tournee) {
             $logs[] = "  [{$tournee['nom']}]";
             $periodes = [];
-            if ($tournee['duree'] === 'matin' || $tournee['duree'] === 'journee') {
+            if ($tournee['duree'] === 'matin' || $tournee['duree'] === 'journée') {
                 $periodes[] = 'matin';
             }
-            if ($tournee['duree'] === 'apres-midi' || $tournee['duree'] === 'journee') {
+            if ($tournee['duree'] === 'après-midi' || $tournee['duree'] === 'journée') {
+                $periodes[] = 'apres-midi';
+            }
+            // Cas spécial : "matin et après-midi" = 2 tours séparés
+            if ($tournee['duree'] === 'matin et après-midi') {
+                $periodes[] = 'matin';
                 $periodes[] = 'apres-midi';
             }
             
+            // CAS PAR DÉFAUT : si duree est null/vide, traiter comme "matin et après-midi"
+            if (empty($periodes) && empty($tournee['duree'])) {
+                $periodes[] = 'matin';
+                $periodes[] = 'apres-midi';
+                $logs[] = "    ⚠️ Durée non définie, traité comme matin et après-midi";
+            }
+            
             foreach ($periodes as $periode) {
-                // Si déjà attribué (par un titulaire en phase 1), passer
-                if (getAttribution($dateStr, $periode, $tournee['id'])) {
-                    $logs[] = "    [{$periode}] Déjà attribué (titulaire)";
-                    continue;
+                // Vérifier si déjà attribué
+                $attributionExistante = getAttribution($dateStr, $periode, $tournee['id']);
+                
+                if ($attributionExistante) {
+                    // Si c'est un titulaire qui occupe cette place, on ne touche pas
+                    $conducteurActuel = null;
+                    foreach ($conducteurs as $c) {
+                        if ($c['id'] == $attributionExistante['conducteur_id']) {
+                            $conducteurActuel = $c;
+                            break;
+                        }
+                    }
+                    
+                    if ($conducteurActuel && $conducteurActuel['tournee_titulaire'] == $tournee['id']) {
+                        $logs[] = "    [{$periode}] Déjà attribué au titulaire";
+                        continue;
+                    }
+                    
+                    // Sinon, on va CHERCHER un meilleur remplaçant et remplacer si nécessaire
+                    $logs[] = "    [{$periode}] Attribution existante (ID conducteur: {$attributionExistante['conducteur_id']}), recherche de meilleur candidat";
                 }
                 
                 // Chercher le meilleur remplaçant disponible
@@ -958,18 +1065,40 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
                 }
                 
                 if ($meilleurConducteur) {
-                    addAttribution([
-                        'date' => $dateStr,
-                        'periode' => $periode,
-                        'conducteur_id' => $meilleurConducteur['id'],
-                        'tournee_id' => $tournee['id'],
-                        'score_ia' => $meilleurScore
-                    ]);
-                    $logs[] = "    [{$periode}] ✅ Remplaçant: {$meilleurConducteur['prenom']} {$meilleurConducteur['nom']} (score: $meilleurScore)";
-                    $succes++;
+                    // Si une attribution existante, on la remplace
+                    if ($attributionExistante) {
+                        // Comparer le score actuel avec le nouveau
+                        if ($meilleurScore > ($attributionExistante['score_ia'] ?? 0)) {
+                            deleteAttribution($attributionExistante['id']);
+                            addAttribution([
+                                'date' => $dateStr,
+                                'periode' => $periode,
+                                'conducteur_id' => $meilleurConducteur['id'],
+                                'tournee_id' => $tournee['id'],
+                                'score_ia' => $meilleurScore
+                            ]);
+                            $logs[] = "    [{$periode}] ✅ REMPLACÉ par {$meilleurConducteur['prenom']} {$meilleurConducteur['nom']} (score: $meilleurScore > {$attributionExistante['score_ia']})";
+                            $succes++;
+                        } else {
+                            $logs[] = "    [{$periode}] ⏸️ Conservé (score actuel {$attributionExistante['score_ia']} >= nouveau $meilleurScore)";
+                        }
+                    } else {
+                        // Pas d'attribution existante, on ajoute
+                        addAttribution([
+                            'date' => $dateStr,
+                            'periode' => $periode,
+                            'conducteur_id' => $meilleurConducteur['id'],
+                            'tournee_id' => $tournee['id'],
+                            'score_ia' => $meilleurScore
+                        ]);
+                        $logs[] = "    [{$periode}] ✅ Remplaçant: {$meilleurConducteur['prenom']} {$meilleurConducteur['nom']} (score: $meilleurScore)";
+                        $succes++;
+                    }
                 } else {
                     $logs[] = "    [{$periode}] ❌ Aucun remplaçant trouvé";
-                    $echecs++;
+                    if (!$attributionExistante) {
+                        $echecs++;
+                    }
                 }
             }
         }
