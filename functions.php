@@ -375,16 +375,92 @@ function addAttribution($d) {
         }
     }
     
-    // CORRECTION 1 : Supprime TOUTES les anciennes attributions du conducteur à cette date/période
+    // CORRECTION 1 : Gérer les tournées "journée" correctement
+    $messageLiberation = '';
+    
     if (!empty($d['conducteur_id'])) {
-        $sqlDeleteConducteur = "DELETE FROM " . DB_PREFIX . "planning
-                                WHERE date = :date AND periode = :periode AND conducteur_id = :conducteur_id";
-        $stmtDeleteConducteur = $pdo->prepare($sqlDeleteConducteur);
-        $stmtDeleteConducteur->execute([
+        // Récupérer la tournée de destination
+        $tourneeDestination = getTournee($d['tournee_id']);
+        $estDestinationJournee = ($tourneeDestination && $tourneeDestination['duree'] === 'journée');
+        
+        // Chercher les attributions actuelles du conducteur ce jour
+        $sqlCheckAll = "SELECT p.*, t.duree, t.nom as tournee_nom
+                       FROM " . DB_PREFIX . "planning p
+                       JOIN " . DB_PREFIX . "tournees t ON p.tournee_id = t.id
+                       WHERE p.date = :date AND p.conducteur_id = :conducteur_id";
+        $stmtCheckAll = $pdo->prepare($sqlCheckAll);
+        $stmtCheckAll->execute([
             ':date' => $d['date'],
-            ':periode' => $d['periode'],
             ':conducteur_id' => $d['conducteur_id']
         ]);
+        $attributionsExistantes = $stmtCheckAll->fetchAll();
+        
+        // Vérifier si le conducteur est sur une tournée "journée"
+        $aUneJournee = false;
+        $tourneeJournee = null;
+        $tourneeJourneeId = null;
+        foreach ($attributionsExistantes as $attr) {
+            if ($attr['duree'] === 'journée') {
+                $aUneJournee = true;
+                $tourneeJournee = $attr['tournee_nom'];
+                $tourneeJourneeId = $attr['tournee_id'];
+                break;
+            }
+        }
+        
+        // RÈGLE 1 : Si conducteur sur tournée journée ET on l'affecte à une AUTRE tournée
+        // → Supprimer TOUTES ses attributions (matin + après-midi)
+        if ($aUneJournee && $tourneeJourneeId != $d['tournee_id']) {
+            $sqlDeleteAll = "DELETE FROM " . DB_PREFIX . "planning
+                            WHERE date = :date AND conducteur_id = :conducteur_id";
+            $stmtDeleteAll = $pdo->prepare($sqlDeleteAll);
+            $stmtDeleteAll->execute([
+                ':date' => $d['date'],
+                ':conducteur_id' => $d['conducteur_id']
+            ]);
+            $messageLiberation = "Le conducteur a été libéré de la tournée « {$tourneeJournee} » (journée complète).";
+        }
+        // RÈGLE 2 : Si on affecte à une tournée journée
+        // → Supprimer TOUTES ses attributions pour libérer toute la journée
+        // SAUF celles de la même tournée (pour ne pas supprimer ce qu'on vient d'insérer)
+        elseif ($estDestinationJournee) {
+            // Construire le message avec toutes les tournées libérées
+            $tourneesLiberees = [];
+            foreach ($attributionsExistantes as $attr) {
+                if ($attr['tournee_id'] != $d['tournee_id']) {
+                    $key = $attr['tournee_nom'];
+                    if (!in_array($key, $tourneesLiberees)) {
+                        $tourneesLiberees[] = $key;
+                    }
+                }
+            }
+            
+            // Supprimer UNIQUEMENT les attributions des AUTRES tournées
+            $sqlDeleteAll = "DELETE FROM " . DB_PREFIX . "planning
+                            WHERE date = :date AND conducteur_id = :conducteur_id AND tournee_id != :tournee_id";
+            $stmtDeleteAll = $pdo->prepare($sqlDeleteAll);
+            $stmtDeleteAll->execute([
+                ':date' => $d['date'],
+                ':conducteur_id' => $d['conducteur_id'],
+                ':tournee_id' => $d['tournee_id']
+            ]);
+            
+            if (!empty($tourneesLiberees)) {
+                $messageLiberation = "Le conducteur a été libéré de : " . implode(', ', $tourneesLiberees) . " (pour tournée journée complète).";
+            }
+        }
+        // RÈGLE 3 : Cas normal (ni source ni destination journée)
+        // → Supprimer seulement la période concernée
+        else {
+            $sqlDeletePeriode = "DELETE FROM " . DB_PREFIX . "planning
+                                WHERE date = :date AND periode = :periode AND conducteur_id = :conducteur_id";
+            $stmtDeletePeriode = $pdo->prepare($sqlDeletePeriode);
+            $stmtDeletePeriode->execute([
+                ':date' => $d['date'],
+                ':periode' => $d['periode'],
+                ':conducteur_id' => $d['conducteur_id']
+            ]);
+        }
     }
     
     // CORRECTION 2 : Supprime l'ancienne attribution sur ce créneau/tournée
@@ -399,6 +475,9 @@ function addAttribution($d) {
     
     // Si aucun conducteur assigné, on arrête là (suppression uniquement)
     if (empty($d['conducteur_id'])) {
+        if (!empty($messageLiberation)) {
+            return ['success' => true, 'message_liberation' => $messageLiberation];
+        }
         return true;
     }
     
@@ -408,13 +487,19 @@ function addAttribution($d) {
                   VALUES (:date, :periode, :conducteur_id, :tournee_id, :score_ia, 'planifie')";
     $stmtInsert = $pdo->prepare($sqlInsert);
     
-    return $stmtInsert->execute([
+    $result = $stmtInsert->execute([
         ':date' => $d['date'],
         ':periode' => $d['periode'],
         ':conducteur_id' => $d['conducteur_id'],
         ':tournee_id' => $d['tournee_id'],
         ':score_ia' => $d['score_ia'] ?? 0
     ]);
+    
+    // Retourner avec le message de libération s'il existe
+    if (!empty($messageLiberation)) {
+        return ['success' => true, 'message_liberation' => $messageLiberation, 'result' => $result];
+    }
+    return $result;
 }
 
 function deleteAttribution($id) {
@@ -514,9 +599,12 @@ function calculerScoreConducteur($conducteurId, $tourneeId, $date, $periode) {
     }
     
     // 3. Expérience (maximum 100 points pour 40 ans)
-    $pointsExp = min(100, (int)$conducteur['experience'] * $poidsExperience);
+    $experience = max(0, (int)($conducteur['experience'] ?? 0)); // S'assurer que c'est au moins 0
+    $pointsExp = min(100, $experience * $poidsExperience);
     $score += $pointsExp;
-    $details[] = "Exp. {$conducteur['experience']} ans (+{$pointsExp})";
+    if ($experience > 0) {
+        $details[] = "Exp. {$experience} ans (+{$pointsExp})";
+    }
     
     // 4. Bonus/Malus selon statut
     if ($conducteur['statut_entreprise'] === 'CDI') {
@@ -527,9 +615,29 @@ function calculerScoreConducteur($conducteurId, $tourneeId, $date, $periode) {
         $details[] = "Intérimaire ({$penaliteInterimaire})";
     }
     
+    // 5. Ajustement selon la difficulté de la tournée
+    $difficulte = (int)($tournee['difficulte'] ?? 3); // Par défaut difficulté moyenne
+    
+    if ($difficulte >= 5 && $experience < 10) {
+        // Tournée très difficile : pénalité importante si < 10 ans d'expérience
+        $penalite = -30;
+        $score += $penalite;
+        $details[] = "Tournée difficile 5 ({$penalite})";
+    } elseif ($difficulte === 4 && $experience < 5) {
+        // Tournée difficile : pénalité si < 5 ans d'expérience
+        $penalite = -20;
+        $score += $penalite;
+        $details[] = "Tournée difficile 4 ({$penalite})";
+    } elseif ($difficulte <= 2 && $experience <= 2) {
+        // Tournée facile : bonus pour les débutants (apprentissage)
+        $bonus = 15;
+        $score += $bonus;
+        $details[] = "Tournée facile (+{$bonus})";
+    }
+    
     // Score final normalisé sur 100
-    // scoreMax = Connaissance + Expérience max (100) + CDI bonus (10)
-    $scoreMax = $poidsConnaissance + 100 + 10;
+    // scoreMax = Connaissance + Expérience max (100) + CDI bonus (10) + Bonus facile (15)
+    $scoreMax = $poidsConnaissance + 100 + 10 + 15;
     $scoreFinal = max(0, min(100, round($score * 100 / $scoreMax)));
     
     return [
@@ -809,6 +917,205 @@ function getStatistiques() {
     return $stats;
 }
 
+// ==================== OPTIMISATION DE LA CONTINUITE ====================
+
+/**
+ * Optimise les attributions pour maximiser la continuité des conducteurs sur plusieurs jours
+ * Analyse les changements de tournée et effectue des échanges quand c'est bénéfique
+ * 
+ * @param string $dateDebut Date de début au format Y-m-d
+ * @param string $dateFin Date de fin au format Y-m-d
+ * @param array $logs Tableau de logs (passé par référence)
+ * @return array ['count' => nombre d'optimisations, 'logs' => logs détaillés]
+ */
+function optimiserContinuiteConducteurs($dateDebut, $dateFin, &$logs) {
+    $pdo = Database::getInstance();
+    $optimisationCount = 0;
+    $optimisationLogs = [];
+    
+    // Récupérer TOUTES les attributions de la période
+    $stmt = $pdo->prepare("
+        SELECT 
+            p.*,
+            c.prenom,
+            c.nom,
+            c.statut_entreprise,
+            c.tournee_titulaire,
+            t.nom as tournee_nom
+        FROM " . DB_PREFIX . "planning p
+        JOIN " . DB_PREFIX . "conducteurs c ON p.conducteur_id = c.id
+        JOIN " . DB_PREFIX . "tournees t ON p.tournee_id = t.id
+        WHERE p.date BETWEEN ? AND ?
+        ORDER BY c.id, p.date, p.periode
+    ");
+    $stmt->execute([$dateDebut, $dateFin]);
+    $attributions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Grouper par conducteur
+    $parConducteur = [];
+    foreach ($attributions as $attr) {
+        $conducteurId = $attr['conducteur_id'];
+        if (!isset($parConducteur[$conducteurId])) {
+            $parConducteur[$conducteurId] = [
+                'nom' => $attr['prenom'] . ' ' . $attr['nom'],
+                'attributions' => []
+            ];
+        }
+        $parConducteur[$conducteurId]['attributions'][] = $attr;
+    }
+    
+    // Pour chaque conducteur, analyser les séquences sur toute la période
+    foreach ($parConducteur as $conducteurId => $data) {
+        $attrs = $data['attributions'];
+        $nom = $data['nom'];
+        
+        // Ignorer les titulaires sur leur propre tournée
+        $estTitulaireSurSaTournee = true;
+        foreach ($attrs as $attr) {
+            if (!isset($attr['tournee_titulaire']) || $attr['tournee_titulaire'] != $attr['tournee_id']) {
+                $estTitulaireSurSaTournee = false;
+                break;
+            }
+        }
+        if ($estTitulaireSurSaTournee) {
+            continue;
+        }
+        
+        // Analyser les séquences (suite de jours sur même tournée, même période)
+        $sequences = [];
+        foreach ($attrs as $attr) {
+            $key = $attr['tournee_id'] . '_' . $attr['periode'];
+            
+            if (!isset($sequences[$key])) {
+                $sequences[$key] = [];
+            }
+            $sequences[$key][] = $attr;
+        }
+        
+        // Trouver la tournée dominante (celle avec le plus de jours)
+        $tourneeDominante = null;
+        $maxJours = 0;
+        
+        foreach ($sequences as $key => $attrs_seq) {
+            if (count($attrs_seq) > $maxJours) {
+                $maxJours = count($attrs_seq);
+                $tourneeDominante = [
+                    'tournee_id' => $attrs_seq[0]['tournee_id'],
+                    'tournee_nom' => $attrs_seq[0]['tournee_nom'],
+                    'periode' => $attrs_seq[0]['periode'],
+                    'count' => count($attrs_seq)
+                ];
+            }
+        }
+        
+        // Si pas de tournée dominante claire (même nombre partout), on ne fait rien
+        if (!$tourneeDominante || $maxJours < 2) {
+            continue;
+        }
+        
+        // Maintenant, chercher les jours où le conducteur est sur une AUTRE tournée
+        // et essayer de les échanger pour maximiser la continuité
+        foreach ($attrs as $attr) {
+            $periode = $attr['periode'];
+            
+            // Si ce jour il est sur sa tournée dominante, OK
+            if ($attr['tournee_id'] == $tourneeDominante['tournee_id'] && $periode == $tourneeDominante['periode']) {
+                continue;
+            }
+            
+            // Sinon, vérifier si on peut l'échanger avec qui est sur la tournée dominante ce jour
+            $date = $attr['date'];
+            $tourneeActuelle = $attr['tournee_id'];
+            $tourneeVoulue = $tourneeDominante['tournee_id'];
+            
+            // Trouver qui est sur la tournée dominante ce jour-là
+            $stmtAutre = $pdo->prepare("
+                SELECT p.*, c.prenom, c.nom, c.tournee_titulaire
+                FROM " . DB_PREFIX . "planning p
+                JOIN " . DB_PREFIX . "conducteurs c ON p.conducteur_id = c.id
+                WHERE p.date = ? AND p.periode = ? AND p.tournee_id = ? AND p.conducteur_id != ?
+            ");
+            $stmtAutre->execute([$date, $periode, $tourneeVoulue, $conducteurId]);
+            $autreConducteur = $stmtAutre->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$autreConducteur) {
+                continue; // Personne sur cette tournée ce jour
+            }
+            
+            // Ne PAS échanger si l'autre est le titulaire de cette tournée
+            if (isset($autreConducteur['tournee_titulaire']) && $autreConducteur['tournee_titulaire'] == $tourneeVoulue) {
+                $optimisationLogs[] = "  ⏭️ Pas d'échange [$date $periode] : {$autreConducteur['prenom']} {$autreConducteur['nom']} est titulaire de {$tourneeDominante['tournee_nom']}";
+                continue;
+            }
+            
+            // Calculer les scores pour les deux configurations
+            try {
+                $scoreActuel1 = (float)($attr['score_ia'] ?? 0);
+                $scoreActuel2 = (float)($autreConducteur['score_ia'] ?? 0);
+                
+                $scoreEchange1 = calculerScoreConducteur($conducteurId, $tourneeVoulue, $date, $periode);
+                $scoreEchange2 = calculerScoreConducteur($autreConducteur['conducteur_id'], $tourneeActuelle, $date, $periode);
+                
+                if (!$scoreEchange1['disponible'] || !$scoreEchange2['disponible']) {
+                    continue;
+                }
+                
+                $scoreActuelTotal = $scoreActuel1 + $scoreActuel2;
+                $scoreEchangeTotal = $scoreEchange1['score'] + $scoreEchange2['score'];
+                $gainScore = $scoreEchangeTotal - $scoreActuelTotal;
+                
+                // Calculer les pertes/gains individuels
+                $perteGainConducteur1 = $scoreEchange1['score'] - $scoreActuel1;
+                $perteGainConducteur2 = $scoreEchange2['score'] - $scoreActuel2;
+                
+                // RÈGLE : Ne PAS échanger si un des conducteurs perd plus de 5 points
+                // (évite de sacrifier un conducteur sur sa tournée maîtrisée)
+                if ($perteGainConducteur1 < -5 || $perteGainConducteur2 < -5) {
+                    $optimisationLogs[] = "  ⏭️ Pas d'échange [$date $periode] : Perte individuelle trop importante (C1: " . round($perteGainConducteur1, 1) . ", C2: " . round($perteGainConducteur2, 1) . ")";
+                    continue;
+                }
+                
+                // Échanger si gain global >= +2 points ET aucune perte individuelle > 5 points
+                if ($gainScore >= 2) {
+                    $pdo->beginTransaction();
+                    try {
+                        // Échanger les tournées
+                        $stmtUpdate1 = $pdo->prepare("
+                            UPDATE " . DB_PREFIX . "planning 
+                            SET tournee_id = ?, score_ia = ?
+                            WHERE id = ?
+                        ");
+                        $stmtUpdate1->execute([$tourneeVoulue, $scoreEchange1['score'], $attr['id']]);
+                        
+                        $stmtUpdate2 = $pdo->prepare("
+                            UPDATE " . DB_PREFIX . "planning 
+                            SET tournee_id = ?, score_ia = ?
+                            WHERE id = ?
+                        ");
+                        $stmtUpdate2->execute([$tourneeActuelle, $scoreEchange2['score'], $autreConducteur['id']]);
+                        
+                        $pdo->commit();
+                        
+                        $optimisationCount++;
+                        $optimisationLogs[] = "  🔄 CONTINUITÉ [$date $periode] : $nom reste sur {$tourneeDominante['tournee_nom']} ({$tourneeDominante['count']} jours) <-> {$autreConducteur['prenom']} {$autreConducteur['nom']} (gain: " . round($gainScore, 1) . ")";
+                        
+                    } catch (Exception $e) {
+                        $pdo->rollBack();
+                        $optimisationLogs[] = "  ❌ Erreur DB : " . $e->getMessage();
+                    }
+                }
+            } catch (Exception $e) {
+                $optimisationLogs[] = "  ⚠️ Erreur calcul : " . $e->getMessage();
+            }
+        }
+    }
+    
+    return [
+        'count' => $optimisationCount,
+        'logs' => $optimisationLogs
+    ];
+}
+
 // ==================== REMPLISSAGE AUTOMATIQUE ====================
 
 function remplirPlanningAuto($dateDebut, $dateFin) {
@@ -816,7 +1123,7 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
     $conducteurs = getConducteurs();
     $succes = 0;
     $echecs = 0;
-    $logs = []; // Pour diagnostiquer
+    $logs = ["🔴🔴🔴 FICHIER FUNCTIONS.PHP VERSION 1817 LIGNES - PAS DE PHASE 2.5 🔴🔴🔴"]; // Pour diagnostiquer
     
     $dateActuelle = new DateTime($dateDebut);
     $dateLimite = new DateTime($dateFin);
@@ -950,29 +1257,304 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
         
         // ==================== PHASE 2 : COMPLÉTER AVEC REMPLAÇANTS ====================
         $logs[] = "\nPHASE 2: Remplaçants";
+        
+        // ÉTAPE 2.1 : Trier les tournées par priorité
+        // Priorité ABSOLUE : Tournées SANS titulaire (besoin permanent comme T39)
+        // Priorité 2 : Tournées avec maîtrise disponible (mais qui ont un titulaire)
+        // Priorité 3 : Autres tournées
+        $tourneesSansTitulaire = [];
+        $tourneesAvecTitulaireEtMaitrise = [];
+        $tourneesAutres = [];
+        
         foreach ($tournees as $tournee) {
-            $logs[] = "  [{$tournee['nom']}]";
-            $periodes = [];
-            if ($tournee['duree'] === 'matin' || $tournee['duree'] === 'journée') {
-                $periodes[] = 'matin';
-            }
-            if ($tournee['duree'] === 'après-midi' || $tournee['duree'] === 'journée') {
-                $periodes[] = 'apres-midi';
-            }
-            // Cas spécial : "matin et après-midi" = 2 tours séparés
-            if ($tournee['duree'] === 'matin et après-midi') {
-                $periodes[] = 'matin';
-                $periodes[] = 'apres-midi';
+            // Vérifier si la tournée a un titulaire
+            $aTitulaire = false;
+            foreach ($conducteurs as $c) {
+                if ($c['tournee_titulaire'] == $tournee['id']) {
+                    $aTitulaire = true;
+                    break;
+                }
             }
             
-            // CAS PAR DÉFAUT : si duree est null/vide, traiter comme "matin et après-midi"
-            if (empty($periodes) && empty($tournee['duree'])) {
+            // Si pas de titulaire = priorité absolue (ex: T39, Rennes)
+            if (!$aTitulaire) {
+                $tourneesSansTitulaire[] = $tournee;
+                continue;
+            }
+            
+            // Sinon, vérifier si quelqu'un maîtrise cette tournée (pour remplacement ponctuel)
+            $aConducteurQuiMaitrise = false;
+            foreach ($conducteurs as $conducteur) {
+                if ($conducteur['tournee_titulaire'] && $conducteur['tournee_titulaire'] != $tournee['id']) {
+                    continue;
+                }
+                
+                if (!empty($conducteur['tournees_maitrisees'])) {
+                    $maitrisees = json_decode($conducteur['tournees_maitrisees'], true);
+                    if (is_array($maitrisees) && in_array($tournee['id'], $maitrisees)) {
+                        $aConducteurQuiMaitrise = true;
+                        break;
+                    }
+                }
+            }
+            
+            if ($aConducteurQuiMaitrise) {
+                $tourneesAvecTitulaireEtMaitrise[] = $tournee;
+            } else {
+                $tourneesAutres[] = $tournee;
+            }
+        }
+        
+        // Fusionner : 1) sans titulaire, 2) avec maîtrise, 3) autres
+        $tourneesOrdonnees = array_merge($tourneesSansTitulaire, $tourneesAvecTitulaireEtMaitrise, $tourneesAutres);
+        
+        $logs[] = "  🎯 Ordre: " . count($tourneesSansTitulaire) . " sans titulaire (priorité), " . count($tourneesAvecTitulaireEtMaitrise) . " avec maîtrise, " . count($tourneesAutres) . " autres";
+        
+        // Créer un index des périodes restantes à traiter par tournée (pour la réservation RÈGLE 6)
+        // Structure: $periodesATraiter[tournee_id] = ['matin' => true, 'apres-midi' => true]
+        $periodesATraiter = [];
+        foreach ($tourneesOrdonnees as $t) {
+            $periodesATraiter[$t['id']] = [];
+            if ($t['duree'] === 'matin' || $t['duree'] === 'journée' || $t['duree'] === 'matin et après-midi') {
+                $periodesATraiter[$t['id']]['matin'] = true;
+            }
+            if ($t['duree'] === 'après-midi' || $t['duree'] === 'journée' || $t['duree'] === 'matin et après-midi') {
+                $periodesATraiter[$t['id']]['apres-midi'] = true;
+            }
+        }
+        
+        foreach ($tourneesOrdonnees as $indexTournee => $tournee) {
+            $logs[] = "  [{$tournee['nom']}]";
+            $periodes = [];
+            $estJournee = false;
+            
+            if ($tournee['duree'] === 'journée') {
+                // Tournée journée : traiter comme un bloc atomique
+                $periodes[] = 'matin';
+                $periodes[] = 'apres-midi';
+                $estJournee = true;
+            } elseif ($tournee['duree'] === 'matin') {
+                $periodes[] = 'matin';
+            } elseif ($tournee['duree'] === 'après-midi') {
+                $periodes[] = 'apres-midi';
+            } elseif ($tournee['duree'] === 'matin et après-midi') {
+                // Cas spécial : "matin et après-midi" = 2 tours séparés
+                $periodes[] = 'matin';
+                $periodes[] = 'apres-midi';
+            } elseif (empty($tournee['duree'])) {
+                // CAS PAR DÉFAUT : si duree est null/vide, traiter comme "matin et après-midi"
                 $periodes[] = 'matin';
                 $periodes[] = 'apres-midi';
                 $logs[] = "    ⚠️ Durée non définie, traité comme matin et après-midi";
             }
             
+            // CAS SPÉCIAL : Tournée "journée" - traiter atomiquement
+            if ($estJournee) {
+                // Vérifier si déjà complètement attribué au titulaire
+                $attrMatin = getAttribution($dateStr, 'matin', $tournee['id']);
+                $attrApresMidi = getAttribution($dateStr, 'apres-midi', $tournee['id']);
+                
+                $estCompletementAttribueAuTitulaire = false;
+                if ($attrMatin && $attrApresMidi && $attrMatin['conducteur_id'] == $attrApresMidi['conducteur_id']) {
+                    // Vérifier si c'est le titulaire
+                    $conducteurActuel = null;
+                    foreach ($conducteurs as $c) {
+                        if ($c['id'] == $attrMatin['conducteur_id']) {
+                            $conducteurActuel = $c;
+                            break;
+                        }
+                    }
+                    
+                    if ($conducteurActuel && $conducteurActuel['tournee_titulaire'] == $tournee['id']) {
+                        $logs[] = "    [journée] Déjà attribué au titulaire";
+                        $estCompletementAttribueAuTitulaire = true;
+                    }
+                }
+                
+                if (!$estCompletementAttribueAuTitulaire) {
+                    // Chercher un conducteur disponible pour TOUTE LA JOURNÉE
+                    $candidatsAvecMaitrise = [];
+                    $candidatsSansMaitrise = [];
+                    
+                    // Récupérer les permis requis
+                    $permisRequis = is_array($tournee['permis_requis']) 
+                        ? $tournee['permis_requis'] 
+                        : json_decode($tournee['permis_requis'] ?? '[]', true);
+                    if (!is_array($permisRequis)) {
+                        $permisRequis = [$permisRequis];
+                    }
+                    
+                    foreach ($conducteurs as $conducteur) {
+                        // RÈGLE 1 : Ne JAMAIS prendre un conducteur titulaire pour une autre tournée
+                        if ($conducteur['tournee_titulaire'] && $conducteur['tournee_titulaire'] != $tournee['id']) {
+                            continue;
+                        }
+                        
+                        // RÈGLE 2 : Vérifier les permis
+                        if (!empty($permisRequis)) {
+                            $permisConducteur = $conducteur['permis'];
+                            
+                            if (is_string($permisConducteur)) {
+                                $decoded = json_decode($permisConducteur, true);
+                                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                                    $permisConducteur = $decoded;
+                                } else {
+                                    $permisConducteur = explode(',', $permisConducteur);
+                                }
+                            }
+                            if (!is_array($permisConducteur)) {
+                                $permisConducteur = [$permisConducteur];
+                            }
+                            $permisConducteur = array_map('trim', $permisConducteur);
+                            
+                            $aPermisValide = false;
+                            foreach ($permisRequis as $permisReq) {
+                                if (in_array(trim($permisReq), $permisConducteur)) {
+                                    $aPermisValide = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!$aPermisValide) {
+                                continue;
+                            }
+                        }
+                        
+                        // RÈGLE 3 : Vérifier si déjà attribué ailleurs pour MATIN OU APRÈS-MIDI
+                        $dejaAttribueMatin = getConducteurAttribution($conducteur['id'], $dateStr, 'matin');
+                        $dejaAttribueApresMidi = getConducteurAttribution($conducteur['id'], $dateStr, 'apres-midi');
+                        
+                        if ($dejaAttribueMatin || $dejaAttribueApresMidi) {
+                            continue; // Doit être libre toute la journée
+                        }
+                        
+                        // RÈGLE 4 : Vérifier la disponibilité pour les deux périodes
+                        $resultatMatin = calculerScoreConducteur($conducteur['id'], $tournee['id'], $dateStr, 'matin');
+                        $resultatApresMidi = calculerScoreConducteur($conducteur['id'], $tournee['id'], $dateStr, 'apres-midi');
+                        
+                        if (!$resultatMatin['disponible'] || !$resultatApresMidi['disponible']) {
+                            continue;
+                        }
+                        
+                        // Utiliser le score moyen
+                        $scoreMoyen = ($resultatMatin['score'] + $resultatApresMidi['score']) / 2;
+                        
+                        // RÈGLE 5 : Vérifier la maîtrise
+                        $maitriseCetteTournee = false;
+                        $tourneesQuIlMaitrise = [];
+                        
+                        if (!empty($conducteur['tournees_maitrisees'])) {
+                            $maitrisees = json_decode($conducteur['tournees_maitrisees'], true);
+                            if (is_array($maitrisees)) {
+                                $tourneesQuIlMaitrise = $maitrisees;
+                                $maitriseCetteTournee = in_array($tournee['id'], $maitrisees);
+                            }
+                        }
+                        
+                        // RÈGLE 6 : Réservation pour tournées maîtrisées
+                        if (!$maitriseCetteTournee && !empty($tourneesQuIlMaitrise)) {
+                            $aTourneeMaitriseeNonCoverte = false;
+                            
+                            foreach ($tourneesQuIlMaitrise as $tourneeIdMaitrisee) {
+                                // Vérifier périodes à venir
+                                if (isset($periodesATraiter[$tourneeIdMaitrisee]) && !empty($periodesATraiter[$tourneeIdMaitrisee])) {
+                                    foreach ($periodesATraiter[$tourneeIdMaitrisee] as $periodeRestante => $dummy) {
+                                        $dejaAttribueCettePeriode = getConducteurAttribution($conducteur['id'], $dateStr, $periodeRestante);
+                                        if (!$dejaAttribueCettePeriode) {
+                                            $aTourneeMaitriseeNonCoverte = true;
+                                            break 2;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if ($aTourneeMaitriseeNonCoverte) {
+                                continue;
+                            }
+                        }
+                        
+                        // Ajouter aux candidats
+                        if ($maitriseCetteTournee) {
+                            $candidatsAvecMaitrise[] = ['conducteur' => $conducteur, 'score' => $scoreMoyen];
+                        } else {
+                            $candidatsSansMaitrise[] = ['conducteur' => $conducteur, 'score' => $scoreMoyen];
+                        }
+                    }
+                    
+                    // Trier et choisir
+                    usort($candidatsAvecMaitrise, function($a, $b) {
+                        return $b['score'] - $a['score'];
+                    });
+                    usort($candidatsSansMaitrise, function($a, $b) {
+                        return $b['score'] - $a['score'];
+                    });
+                    
+                    $meilleurConducteur = null;
+                    $meilleurScore = -1;
+                    
+                    if (!empty($candidatsAvecMaitrise)) {
+                        $meilleurConducteur = $candidatsAvecMaitrise[0]['conducteur'];
+                        $meilleurScore = $candidatsAvecMaitrise[0]['score'];
+                    } elseif (!empty($candidatsSansMaitrise)) {
+                        $meilleurConducteur = $candidatsSansMaitrise[0]['conducteur'];
+                        $meilleurScore = $candidatsSansMaitrise[0]['score'];
+                    }
+                    
+                    if ($meilleurConducteur) {
+                        // Attribuer pour MATIN et APRÈS-MIDI
+                        try {
+                            $resultMatin = addAttribution([
+                                'date' => $dateStr,
+                                'periode' => 'matin',
+                                'tournee_id' => $tournee['id'],
+                                'conducteur_id' => $meilleurConducteur['id'],
+                                'score_ia' => $meilleurScore
+                            ]);
+                            
+                            $resultApresMidi = addAttribution([
+                                'date' => $dateStr,
+                                'periode' => 'apres-midi',
+                                'tournee_id' => $tournee['id'],
+                                'conducteur_id' => $meilleurConducteur['id'],
+                                'score_ia' => $meilleurScore
+                            ]);
+                            
+                            $successMatin = is_array($resultMatin) ? $resultMatin['success'] : $resultMatin;
+                            $successAM = is_array($resultApresMidi) ? $resultApresMidi['success'] : $resultApresMidi;
+                            
+                            if ($successMatin && $successAM) {
+                                $logs[] = "    [journée] ✅ Remplaçant: {$meilleurConducteur['nom']} {$meilleurConducteur['prenom']} (score: " . round($meilleurScore, 2) . ")";
+                                $succes++;
+                                
+                                // Retirer les deux périodes de la liste à traiter
+                                if (isset($periodesATraiter[$tournee['id']])) {
+                                    unset($periodesATraiter[$tournee['id']]['matin']);
+                                    unset($periodesATraiter[$tournee['id']]['apres-midi']);
+                                }
+                            } else {
+                                $logs[] = "    [journée] ❌ Erreur lors de l'attribution (résultat négatif)";
+                                $echecs++;
+                            }
+                        } catch (Exception $e) {
+                            $logs[] = "    [journée] ❌ Exception: " . $e->getMessage();
+                            $echecs++;
+                        }
+                    } else {
+                        $logs[] = "    [journée] ⚠️ Aucun conducteur disponible pour toute la journée";
+                    }
+                }
+                
+                // Passer à la tournée suivante (ne pas traiter les périodes individuellement)
+                continue;
+            }
+            
+            // TRAITEMENT NORMAL pour les autres types de tournées
             foreach ($periodes as $periode) {
+                // Retirer cette période de la liste des "à traiter" pour cette tournée
+                if (isset($periodesATraiter[$tournee['id']])) {
+                    unset($periodesATraiter[$tournee['id']][$periode]);
+                }
+                
                 // Vérifier si déjà attribué
                 $attributionExistante = getAttribution($dateStr, $periode, $tournee['id']);
                 
@@ -996,8 +1578,9 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
                 }
                 
                 // Chercher le meilleur remplaçant disponible
-                $meilleurScore = -1;
-                $meilleurConducteur = null;
+                // ÉTAPE 2.2 : Séparer les candidats selon qu'ils maîtrisent ou non la tournée
+                $candidatsAvecMaitrise = [];
+                $candidatsSansMaitrise = [];
                 
                 // Récupérer les permis requis pour cette tournée
                 $permisRequis = is_array($tournee['permis_requis']) 
@@ -1008,12 +1591,12 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
                 }
                 
                 foreach ($conducteurs as $conducteur) {
-                    // RÈGLE STRICTE : Ne JAMAIS prendre un conducteur titulaire pour une autre tournée
+                    // RÈGLE 1 : Ne JAMAIS prendre un conducteur titulaire pour une autre tournée
                     if ($conducteur['tournee_titulaire'] && $conducteur['tournee_titulaire'] != $tournee['id']) {
-                        continue; // Ce conducteur est titulaire d'une autre tournée, on ne le prend pas
+                        continue;
                     }
                     
-                    // VÉRIFICATION DES PERMIS : Le conducteur doit avoir AU MOINS UN des permis requis
+                    // RÈGLE 2 : Vérifier les permis
                     if (!empty($permisRequis)) {
                         $permisConducteur = $conducteur['permis'];
                         
@@ -1031,7 +1614,6 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
                         }
                         $permisConducteur = array_map('trim', $permisConducteur);
                         
-                        // Vérifier si le conducteur possède au moins un permis requis
                         $aPermisValide = false;
                         foreach ($permisRequis as $permisReq) {
                             if (in_array(trim($permisReq), $permisConducteur)) {
@@ -1040,28 +1622,137 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
                             }
                         }
                         
-                        // Si le conducteur n'a pas le bon permis, on le saute
                         if (!$aPermisValide) {
                             continue;
                         }
                     }
                     
-                    // Vérifier si le conducteur n'est pas déjà attribué à cette période
+                    // RÈGLE 3 : Vérifier si déjà attribué ailleurs
                     $dejaAttribue = getConducteurAttribution($conducteur['id'], $dateStr, $periode);
                     if ($dejaAttribue) {
-                        continue;
+                        continue; // Déjà attribué ailleurs, on passe au suivant
                     }
                     
+                    // RÈGLE 4 : Vérifier la disponibilité
                     $resultat = calculerScoreConducteur($conducteur['id'], $tournee['id'], $dateStr, $periode);
                     
                     if (!$resultat['disponible']) {
                         continue;
                     }
                     
-                    if ($resultat['score'] > $meilleurScore) {
-                        $meilleurScore = $resultat['score'];
-                        $meilleurConducteur = $conducteur;
+                    // RÈGLE 5 : Vérifier la maîtrise
+                    $maitriseCetteTournee = false;
+                    $tourneesQuIlMaitrise = [];
+                    
+                    if (!empty($conducteur['tournees_maitrisees'])) {
+                        $maitrisees = json_decode($conducteur['tournees_maitrisees'], true);
+                        if (is_array($maitrisees)) {
+                            $tourneesQuIlMaitrise = $maitrisees;
+                            $maitriseCetteTournee = in_array($tournee['id'], $maitrisees);
+                        }
                     }
+                    
+                    // RÈGLE 6 ASSOUPLIE : Si le conducteur ne maîtrise PAS cette tournée mais en maîtrise d'autres
+                    // vérifier qu'il n'a pas de tournée maîtrisée non encore attribuée OU à venir
+                    // MAIS : On autorise quand même si AUCUN autre conducteur n'est disponible (logique de dernier recours)
+                    if (!$maitriseCetteTournee && !empty($tourneesQuIlMaitrise)) {
+                        $aTourneeMaitriseeNonCoverte = false;
+                        
+                        foreach ($tourneesQuIlMaitrise as $tourneeIdMaitrisee) {
+                            // RÈGLE 6A-bis : Si cette tournée maîtrisée a déjà été traitée et le conducteur y est affecté
+                            // alors on ne le prend PAS pour une autre période qui entrerait en conflit
+                            $attrExistante = getConducteurAttribution($conducteur['id'], $dateStr, $periode);
+                            if ($attrExistante && $attrExistante['tournee_id'] == $tourneeIdMaitrisee) {
+                                // Le conducteur est déjà sur sa tournée maîtrisée pour cette période
+                                // On ne peut pas le prendre (RÈGLE STRICTE)
+                                $logs[] = "      🔒 PROTECTION: {$conducteur['nom']} {$conducteur['prenom']} déjà sur tournée maîtrisée ID:{$tourneeIdMaitrisee} [{$periode}] - non utilisable pour [{$tournee['nom']}]";
+                                $aTourneeMaitriseeNonCoverte = true;
+                                break;
+                            }
+                            
+                            // RÈGLE 6B ASSOUPLIE : Vérifier si sa tournée maîtrisée n'est PAS attribuée
+                            // mais seulement la bloquer si elle est en PRIORITÉ (sans titulaire)
+                            $tourneeMaitrisee = null;
+                            foreach ($tourneesOrdonnees as $t) {
+                                if ($t['id'] == $tourneeIdMaitrisee) {
+                                    $tourneeMaitrisee = $t;
+                                    break;
+                                }
+                            }
+                            
+                            if (!$tourneeMaitrisee) continue;
+                            
+                            // Vérifier si cette tournée maîtrisée est SANS TITULAIRE (priorité absolue)
+                            $tourneeMaitriseeEstSansTitulaire = true;
+                            foreach ($conducteurs as $c) {
+                                if ($c['tournee_titulaire'] == $tourneeIdMaitrisee) {
+                                    $tourneeMaitriseeEstSansTitulaire = false;
+                                    break;
+                                }
+                            }
+                            
+                            // Si la tournée maîtrisée est SANS TITULAIRE et non couverte, BLOQUER (priorité absolue)
+                            if ($tourneeMaitriseeEstSansTitulaire) {
+                                // Vérifier les périodes de cette tournée
+                                $periodesMaitrisee = [];
+                                if ($tourneeMaitrisee['duree'] === 'matin' || $tourneeMaitrisee['duree'] === 'journée') {
+                                    $periodesMaitrisee[] = 'matin';
+                                }
+                                if ($tourneeMaitrisee['duree'] === 'après-midi' || $tourneeMaitrisee['duree'] === 'journée') {
+                                    $periodesMaitrisee[] = 'apres-midi';
+                                }
+                                if ($tourneeMaitrisee['duree'] === 'matin et après-midi') {
+                                    $periodesMaitrisee[] = 'matin';
+                                    $periodesMaitrisee[] = 'apres-midi';
+                                }
+                                
+                                foreach ($periodesMaitrisee as $pM) {
+                                    $attrMaitrisee = getAttribution($dateStr, $pM, $tourneeIdMaitrisee);
+                                    // Si cette période de sa tournée maîtrisée SANS TITULAIRE n'est pas attribuée
+                                    if (!$attrMaitrisee) {
+                                        $logs[] = "      🔒 RÉSERVATION PRIORITAIRE: {$conducteur['nom']} {$conducteur['prenom']} réservé pour tournée SANS TITULAIRE ID:{$tourneeIdMaitrisee} [{$pM}] - non utilisable pour [{$tournee['nom']}] [{$periode}]";
+                                        $aTourneeMaitriseeNonCoverte = true;
+                                        break 2;
+                                    }
+                                }
+                            }
+                            // Si la tournée maîtrisée a un titulaire, on AUTORISE le conducteur à aller ailleurs
+                            // (le titulaire s'en occupera normalement)
+                        }
+                        
+                        // Si une de ses tournées maîtrisées PRIORITAIRES n'est pas couverte, on ne le prend PAS
+                        if ($aTourneeMaitriseeNonCoverte) {
+                            continue;
+                        }
+                        // Sinon, on l'autorise à être candidat même sur une tournée non maîtrisée
+                    }
+                    
+                    // Ajouter aux candidats selon la maîtrise
+                    if ($maitriseCetteTournee) {
+                        $candidatsAvecMaitrise[] = ['conducteur' => $conducteur, 'score' => $resultat['score']];
+                    } else {
+                        $candidatsSansMaitrise[] = ['conducteur' => $conducteur, 'score' => $resultat['score']];
+                    }
+                }
+                
+                // ÉTAPE 2.3 : Trier chaque liste par score
+                usort($candidatsAvecMaitrise, function($a, $b) {
+                    return $b['score'] - $a['score'];
+                });
+                usort($candidatsSansMaitrise, function($a, $b) {
+                    return $b['score'] - $a['score'];
+                });
+                
+                // ÉTAPE 2.4 : Choisir le meilleur candidat (priorité à ceux qui maîtrisent)
+                $meilleurConducteur = null;
+                $meilleurScore = -1;
+                
+                if (!empty($candidatsAvecMaitrise)) {
+                    $meilleurConducteur = $candidatsAvecMaitrise[0]['conducteur'];
+                    $meilleurScore = $candidatsAvecMaitrise[0]['score'];
+                } elseif (!empty($candidatsSansMaitrise)) {
+                    $meilleurConducteur = $candidatsSansMaitrise[0]['conducteur'];
+                    $meilleurScore = $candidatsSansMaitrise[0]['score'];
                 }
                 
                 if ($meilleurConducteur) {
@@ -1106,8 +1797,20 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
         $dateActuelle->modify('+1 day');
     }
     
+    // PHASE 3 : OPTIMISATION DE LA CONTINUITÉ
+    $logs[] = "\n=== PHASE 3 : OPTIMISATION DE LA CONTINUITÉ ===";
+    try {
+        $optimisations = optimiserContinuiteConducteurs($dateDebut, $dateFin, $logs);
+        $logs = array_merge($logs, $optimisations['logs']);
+        $logs[] = "✅ Optimisations effectuées : {$optimisations['count']}";
+    } catch (Exception $e) {
+        $logs[] = "⚠️ Erreur Phase 3 : " . $e->getMessage();
+        $logs[] = "Trace : " . $e->getTraceAsString();
+        $optimisations = ['count' => 0];
+    }
+    
     // Écrire les logs dans un fichier pour diagnostic
     file_put_contents(__DIR__ . '/ia_debug.log', implode("\n", $logs));
     
-    return ['succes' => $succes, 'echecs' => $echecs, 'logs' => $logs];
+    return ['succes' => $succes, 'echecs' => $echecs, 'logs' => $logs, 'optimisations' => $optimisations['count'] ?? 0];
 }

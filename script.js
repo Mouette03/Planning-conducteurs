@@ -72,6 +72,9 @@ async function initApp() {
         
         // Charger le score de performance dans le header
         await updateScoreHeader();
+        
+        // Restaurer la période de planning depuis localStorage
+        restaurerPeriodePlanning();
     } catch (e) {
         console.error('Init error', e);
         showToast('Erreur', 'Impossible de charger les données', 'danger');
@@ -86,6 +89,35 @@ async function initApp() {
         if (!isAdmin) {
             // Masquer les fonctionnalités réservées aux administrateurs
             document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+        }
+    }
+}
+
+// Restaure la période de planning depuis localStorage
+function restaurerPeriodePlanning() {
+    const periodeData = JSON.parse(localStorage.getItem('planning_periode') || '{}');
+    
+    if (periodeData.debut && periodeData.fin) {
+        // Restaurer les valeurs dans les champs
+        const debutInput = document.getElementById('planning-date-debut');
+        const finInput = document.getElementById('planning-date-fin');
+        
+        if (debutInput && finInput) {
+            debutInput.value = periodeData.debut;
+            finInput.value = periodeData.fin;
+            
+            // Restaurer l'état
+            AppState.selectedPeriod.debut = periodeData.debut;
+            AppState.selectedPeriod.fin = periodeData.fin;
+            AppState.currentWeekOffset = periodeData.weekOffset || 0;
+            
+            // Recharger le planning automatiquement
+            apiCall(`get_planning&debut=${periodeData.debut}&fin=${periodeData.fin}`)
+                .then(({ data }) => {
+                    AppState.planningFullData = data || [];
+                    renderPlanningWithNavigation();
+                })
+                .catch(err => console.error('Erreur restauration planning:', err));
         }
     }
 }
@@ -279,7 +311,7 @@ async function renderConducteurs() {
                 if (scorePerformance >= 80) badgeClass = 'bg-success';
                 else if (scorePerformance >= 60) badgeClass = 'bg-info';
                 else if (scorePerformance >= 40) badgeClass = 'bg-warning';
-                else if (scorePerformance > 0) badgeClass = 'bg-danger';
+                else badgeClass = 'bg-danger'; // Score < 40 ou = 0
             }
         } catch (e) {
             console.warn('Erreur performance:', e);
@@ -591,6 +623,8 @@ async function sauvegarderConducteur() {
     };
     
     try {
+        const conducteurModifie = !!id; // true si modification, false si création
+        
         if (id) {
             await apiCall('update_conducteur', 'POST', { id: +id, ...data });
         } else {
@@ -598,7 +632,68 @@ async function sauvegarderConducteur() {
         }
         showToast('Succès', 'Conducteur enregistré', 'success');
         chargerConducteurs();
-        bootstrap.Modal.getInstance(document.getElementById('modalConducteur')).hide();
+        
+        // Fermer la modale d'abord
+        const modal = bootstrap.Modal.getInstance(document.getElementById('modalConducteur'));
+        if (modal) {
+            modal.hide();
+        }
+        
+        // Attendre que la modale soit fermée
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Si on a modifié un conducteur (peu importe l'onglet actuel)
+        if (conducteurModifie) {
+            // Proposer de régénérer le planning
+            const regenerer = confirm(`✅ Conducteur enregistré avec succès !\n\n🔄 Voulez-vous RÉGÉNÉRER le planning maintenant ?\n\nCela va :\n- Basculer sur l'onglet Planning\n- EFFACER toutes les attributions de la période\n- RÉGÉNÉRER complètement le planning avec la nouvelle logique\n- Placer les conducteurs sur leurs tournées maîtrisées en priorité\n\n⚠️ ATTENTION : Toutes les attributions manuelles seront perdues !`);
+            
+            if (regenerer) {
+                // Basculer sur l'onglet planning
+                window.location.hash = '#planning';
+                
+                // Attendre le changement d'onglet et que le planning soit chargé
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Lancer la régénération IA avec effacement
+                const debut = document.getElementById('planning-date-debut').value;
+                const fin = document.getElementById('planning-date-fin').value;
+                
+                if (!debut || !fin) {
+                    showToast('Erreur', 'Période non définie', 'danger');
+                    return;
+                }
+                
+                try {
+                    // Effacer la période
+                    showToast('Info', 'Effacement du planning...', 'info');
+                    const effacementResponse = await apiCall('effacer_planning_periode', 'POST', { debut, fin });
+                    
+                    if (effacementResponse.success) {
+                        showToast('Info', `${effacementResponse.nb_supprimees || 0} attributions effacées`, 'info');
+                        
+                        // Régénérer
+                        showToast('Info', 'Régénération avec IA...', 'info');
+                        const response = await fetch('api.php?action=remplir_auto', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json;charset=utf-8' },
+                            body: JSON.stringify({ debut, fin })
+                        });
+                        const result = await response.json();
+                        
+                        if (response.ok && result.success) {
+                            const { succes, echecs } = result.data;
+                            showToast('Succès', `Planning régénéré : ${succes} attributions créées`, 'success');
+                            await chargerPlanning();
+                        } else {
+                            showToast('Erreur', 'Échec de la régénération', 'danger');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Erreur régénération:', error);
+                    showToast('Erreur', 'Impossible de régénérer le planning', 'danger');
+                }
+            }
+        }
     } catch (error) {
         console.error('Erreur sauvegarde:', error);
     }
@@ -808,6 +903,13 @@ async function chargerPlanning() {
     AppState.selectedPeriod.fin = fin;
     AppState.currentWeekOffset = 0;
     
+    // Sauvegarder dans localStorage
+    localStorage.setItem('planning_periode', JSON.stringify({
+        debut: debut,
+        fin: fin,
+        weekOffset: 0
+    }));
+    
     try {
         const { data } = await apiCall(`get_planning&debut=${debut}&fin=${fin}`);
         AppState.planningFullData = data || [];
@@ -823,6 +925,12 @@ async function chargerPlanning() {
 // Navigation semaine par semaine
 function naviguerSemaine(direction) {
     AppState.currentWeekOffset += direction;
+    
+    // Sauvegarder la position dans localStorage
+    const periodeData = JSON.parse(localStorage.getItem('planning_periode') || '{}');
+    periodeData.weekOffset = AppState.currentWeekOffset;
+    localStorage.setItem('planning_periode', JSON.stringify(periodeData));
+    
     renderPlanningWithNavigation();
 }
 
@@ -834,21 +942,33 @@ function renderPlanningWithNavigation() {
     
     const debutDate = new Date(debut);
     const finDate = new Date(fin);
+    const aujourdhui = new Date();
+    aujourdhui.setHours(0, 0, 0, 0);
     
     // Calculer toutes les semaines dans la période
-    const semaines = [];
+    const toutesLesSemaines = [];
     let currentWeekStart = new Date(debutDate);
     
     while (currentWeekStart <= finDate) {
         const weekEnd = new Date(currentWeekStart);
         weekEnd.setDate(weekEnd.getDate() + 6);
         
-        semaines.push({
+        toutesLesSemaines.push({
             debut: new Date(currentWeekStart),
             fin: weekEnd > finDate ? new Date(finDate) : weekEnd
         });
         
         currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+    }
+    
+    // Filtrer : garder seulement les semaines >= aujourd'hui (masquer les semaines passées)
+    const semaines = toutesLesSemaines.filter(semaine => {
+        return semaine.fin >= aujourdhui; // Garder si la fin de semaine n'est pas encore passée
+    });
+    
+    // Si toutes les semaines sont passées, garder au moins la dernière
+    if (semaines.length === 0 && toutesLesSemaines.length > 0) {
+        semaines.push(toutesLesSemaines[toutesLesSemaines.length - 1]);
     }
     
     // Vérifier que l'offset est valide
@@ -952,19 +1072,19 @@ function createCellContent(tournee, attr, date, periode) {
     let cellClass = 'bg-light';
     
     // N'afficher le score que si un conducteur est attribué
-    if (attr && attr.conducteur_id && attr.score_ia !== undefined) {
+    if (attr && attr.conducteur_id && attr.score_ia !== undefined && attr.score_ia !== null) {
         const score = Math.round(attr.score_ia);
         
         if (score >= 80) cellClass = 'bg-success bg-opacity-25';
         else if (score >= 60) cellClass = 'bg-info bg-opacity-25';
         else if (score >= 40) cellClass = 'bg-warning bg-opacity-25';
-        else if (score > 0) cellClass = 'bg-danger bg-opacity-25';
+        else cellClass = 'bg-danger bg-opacity-25'; // Score < 40 ou = 0
         
         let badgeClass = 'bg-secondary';
         if (score >= 80) badgeClass = 'bg-success';
         else if (score >= 60) badgeClass = 'bg-info';
         else if (score >= 40) badgeClass = 'bg-warning';
-        else if (score > 0) badgeClass = 'bg-danger';
+        else badgeClass = 'bg-danger'; // Score < 40 ou = 0
         
         // Trouver le conducteur pour récupérer son statut
         const conducteur = AppState.conducteurs.find(c => c.id == attr.conducteur_id);
@@ -1138,10 +1258,35 @@ async function sauvegarderAttribution(select) {
             const tourneeDeja = tournees.find(t => t.id == attr.tournee_id);
             if (!tourneeDeja) continue;
             
-            // CONFLIT 1 : Le conducteur est déjà sur une tournée "journée" ou "matin et après-midi"
-            if (tourneeDeja.duree === 'journée' || tourneeDeja.duree === 'matin et après-midi') {
-                const typeTournee = tourneeDeja.duree === 'journée' ? 'JOURNÉE' : 'MATIN ET APRÈS-MIDI';
+            // CONFLIT 1 : Le conducteur est déjà sur une tournée "journée"
+            if (tourneeDeja.duree === 'journée') {
+                // Si on affecte sur n'importe quelle période, il faut libérer toute la journée
+                const confirmMsg = `⚠️ CONFLIT DÉTECTÉ\n\n${conducteurs.find(c => c.id === conducteurId)?.prenom || 'Ce conducteur'} est déjà affecté à la tournée JOURNÉE "${tourneeDeja.nom}".\n\nVoulez-vous :\n• SUPPRIMER l'attribution de "${tourneeDeja.nom}" (journée complète)\n• ET affecter à "${tourneeActuelle?.nom || 'cette tournée'}" (${periode}) ?\n\n⚠️ Cela libérera le conducteur de toute la journée "${tourneeDeja.nom}".`;
                 
+                if (!confirm(confirmMsg)) {
+                    select.value = '';
+                    return;
+                }
+                
+                // Supprimer toute la journée
+                await apiCall('delete_attribution', 'POST', { id: attr.id });
+                // Il faut aussi supprimer l'autre période de la journée
+                const autrePeriode = attr.periode === 'matin' ? 'apres-midi' : 'matin';
+                const autreAttr = toutesAttributions.find(a => 
+                    a.conducteur_id === conducteurId && 
+                    a.tournee_id === tourneeDeja.id && 
+                    a.periode === autrePeriode
+                );
+                if (autreAttr) {
+                    await apiCall('delete_attribution', 'POST', { id: autreAttr.id });
+                }
+                showToast('Modification', `Attribution à "${tourneeDeja.nom}" (journée) supprimée`, 'warning');
+                // Continuer avec la nouvelle attribution
+                break;
+            }
+            
+            // CONFLIT 1-bis : Le conducteur est déjà sur une tournée "matin et après-midi"
+            if (tourneeDeja.duree === 'matin et après-midi') {
                 // Si on affecte sur la même période que celle déjà occupée
                 if (attr.periode === periode) {
                     const confirmMsg = `⚠️ CONFLIT DÉTECTÉ\n\n${conducteurs.find(c => c.id === conducteurId)?.prenom || 'Ce conducteur'} est déjà affecté ${periode === 'matin' ? 'le matin' : 'l\'après-midi'} sur "${tourneeDeja.nom}".\n\nVoulez-vous :\n• SUPPRIMER l'attribution de "${tourneeDeja.nom}" (${periode})\n• ET affecter à "${tourneeActuelle?.nom || 'cette tournée'}" (${periode}) ?\n\n⚠️ Cela remplacera uniquement la période ${periode}.`;
@@ -1163,10 +1308,11 @@ async function sauvegarderAttribution(select) {
                 continue;
             }
             
-            // CONFLIT 2 : On veut affecter à une tournée "journée" ou "matin et après-midi" mais le conducteur a déjà des attributions
-            if (tourneeActuelle && (tourneeActuelle.duree === 'journée' || tourneeActuelle.duree === 'matin et après-midi')) {
-                const typeTournee = tourneeActuelle.duree === 'journée' ? 'JOURNÉE' : 'MATIN ET APRÈS-MIDI';
-                const confirmMsg = `⚠️ CONFLIT DÉTECTÉ\n\n${conducteurs.find(c => c.id === conducteurId)?.prenom || 'Ce conducteur'} est déjà affecté à "${tourneeDeja.nom}" (${attr.periode}) le ${new Date(date).toLocaleDateString('fr-FR')}.\n\nVous voulez l'affecter à une tournée ${typeTournee} "${tourneeActuelle.nom}" qui occupe TOUTE la journée.\n\nVoulez-vous :\n• SUPPRIMER l'attribution de "${tourneeDeja.nom}" (${attr.periode})\n• ET affecter à "${tourneeActuelle.nom}" (journée complète) ?\n\n⚠️ Cela libérera le conducteur de "${tourneeDeja.nom}".`;
+            // CONFLIT 2 : On veut affecter à une tournée "journée" (mais PAS "matin et après-midi")
+            // Une tournée "journée" occupe vraiment toute la journée avec le même conducteur
+            // Une tournée "matin et après-midi" ce sont 2 tournées séparées
+            if (tourneeActuelle && tourneeActuelle.duree === 'journée') {
+                const confirmMsg = `⚠️ CONFLIT DÉTECTÉ\n\n${conducteurs.find(c => c.id === conducteurId)?.prenom || 'Ce conducteur'} est déjà affecté à "${tourneeDeja.nom}" (${attr.periode}) le ${new Date(date).toLocaleDateString('fr-FR')}.\n\nVous voulez l'affecter à une tournée JOURNÉE "${tourneeActuelle.nom}" qui occupe TOUTE la journée.\n\nVoulez-vous :\n• SUPPRIMER l'attribution de "${tourneeDeja.nom}" (${attr.periode})\n• ET affecter à "${tourneeActuelle.nom}" (journée complète) ?\n\n⚠️ Cela libérera le conducteur de "${tourneeDeja.nom}".`;
                 
                 if (!confirm(confirmMsg)) {
                     select.value = '';
@@ -1312,8 +1458,11 @@ async function remplirPlanningAuto() {
         return;
     }
 
-    if (!confirm(`Générer automatiquement le planning d'IA du ${debut} au ${fin} ?`)) {
-        return;
+    // Proposer d'effacer le planning existant d'abord
+    const effacer = confirm(`Générer automatiquement le planning d'IA du ${debut} au ${fin} ?\n\n⚠️ IMPORTANT :\n\n🔴 Voulez-vous EFFACER les attributions existantes AVANT de régénérer ?\n\n- Cliquez OK pour EFFACER puis régénérer (recommandé pour tenir compte des changements)\n- Cliquez ANNULER pour juste compléter les trous sans toucher aux attributions existantes`);
+    
+    if (effacer === null) {
+        return; // L'utilisateur a fermé la boîte de dialogue
     }
 
     const btn = event.target;
@@ -1321,6 +1470,21 @@ async function remplirPlanningAuto() {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Génération...';
 
     try {
+        // Si demandé, effacer les attributions de la période d'abord
+        if (effacer) {
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Effacement...';
+            const effacementResponse = await apiCall('effacer_planning_periode', 'POST', { debut, fin });
+            if (!effacementResponse.success) {
+                showToast('Erreur', 'Impossible d\'effacer le planning', 'danger');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-robot me-1"></i>Remplir automatiquement (IA)';
+                return;
+            }
+            showToast('Info', `${effacementResponse.nb_supprimees || 0} attributions effacées`, 'info');
+        }
+        
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Génération IA...';
+        
         const response = await fetch('api.php?action=remplir_auto', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json;charset=utf-8' },
@@ -1354,7 +1518,7 @@ async function actualiserPlanning() {
         return;
     }
 
-    if (!confirm(`Actualiser le planning du ${debut} au ${fin} ?\n\nCette opération va :\n- ✖️ Supprimer les attributions invalides (conducteurs indisponibles, permis manquants)\n- 🔄 Recalculer tous les scores existants\n- ⭐ Réattribuer les titulaires en priorité sur leur tournée\n- 🎯 Compléter les créneaux vides avec les meilleurs remplaçants\n- 🔃 Recharger les données (conducteurs, tournées, planning)`)) {
+    if (!confirm(`Actualiser le planning du ${debut} au ${fin} ?\n\nCette opération va :\n- ✖️ Supprimer les attributions invalides (conducteurs indisponibles, permis manquants)\n- 🔄 Recalculer tous les scores existants\n- 🎯 Réoptimiser les attributions selon les tournées maîtrisées\n- ⭐ Réattribuer les titulaires en priorité sur leur tournée\n- ✅ Compléter les créneaux vides avec les meilleurs remplaçants\n- 🔃 Recharger les données\n\n⚠️ ATTENTION : Cette opération peut modifier les attributions manuelles !`)) {
         return;
     }
 
