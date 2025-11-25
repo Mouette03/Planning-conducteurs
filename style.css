@@ -156,6 +156,8 @@
 .btn-success { background-color: #00B09B; border-color: #00B09B; }
 .btn-info { background-color: #17a2b8; border-color: #17a2b8; color: white; }
 .btn-info:hover { background-color: #138496; border-color: #117a8b; color: white; }
+.btn-orange { background-color: #fd7e14; border-color: #fd7e14; color: white; }
+.btn-orange:hover { background-color: #e66b02; border-color: #dc6502; color: white; }
 .btn-outline-danger { color: #dc3545; border-color: #dc3545; }
 .btn-outline-danger:hover { background-color: #dc3545; color: #fff; }
 
@@ -171,10 +173,53 @@
     color: #000;
 }
 
+/* Planning date inputs */
+.planning-date-input {
+    width: 150px;
+    min-width: 120px;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .stat-number { font-size: 2rem; }
     .stat-card { flex-direction: column; text-align: center; }
+    
+    /* Planning header responsive */
+    .planning-date-input {
+        width: 140px;
+        min-width: 100px;
+        flex: 1;
+    }
+    
+    .planning-table th,
+    .planning-table td {
+        min-width: 120px;
+        font-size: 0.85rem;
+        padding: 0.35rem;
+    }
+    
+    .planning-table td:first-child,
+    .planning-table th:first-child {
+        min-width: 140px;
+        max-width: 140px;
+    }
+}
+
+@media (max-width: 576px) {
+    .planning-date-input {
+        width: 110px;
+        min-width: 90px;
+    }
+    
+    /* Espacement des boutons d'effacement sur mobile */
+    .btn-group-delete .btn {
+        margin-right: 0.5rem !important;
+    }
+    
+    .btn-group-delete {
+        display: flex;
+        gap: 0.5rem;
+    }
 }
 
 /* Utility */

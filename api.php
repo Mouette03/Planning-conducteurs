@@ -161,14 +161,11 @@ try {
         case 'get_planning':
             $debut = $_GET['debut'] ?? date('Y-m-d');
             $fin = $_GET['fin'] ?? date('Y-m-d');
-            $logger->log('DEBUG', "get_planning: debut=$debut, fin=$fin");
             $data = getPlanning($debut, $fin);
             jsonResponse(['success' => true, 'data' => $data]);
             break;
             
         case 'add_attribution':
-            $logger->log('DEBUG', "add_attribution input: " . json_encode($input));
-            
             // Validation stricte
             if (!isset($input['date'])) {
                 throw new Exception('Date manquante');
@@ -182,7 +179,6 @@ try {
             
             // Appel de la fonction
             $result = addAttribution($input);
-            $logger->log('DEBUG', "add_attribution result: " . ($result ? 'success' : 'failed'));
             
             jsonResponse([
                 'success' => true, 
@@ -273,14 +269,11 @@ try {
             $date = $_GET['date'] ?? date('Y-m-d');
             $periode = $_GET['periode'] ?? 'matin';
             
-            $logger->log('DEBUG', "calculer_score: c=$conducteurId, t=$tourneeId, d=$date, p=$periode");
-            
             if (!$conducteurId || !$tourneeId) {
                 throw new Exception('Paramètres manquants pour calculer_score');
             }
             
             $score = calculerScoreConducteur($conducteurId, $tourneeId, $date, $periode);
-            $logger->log('DEBUG', "Score calculé: " . json_encode($score));
             
             jsonResponse(['success' => true, 'data' => $score]);
             break;
@@ -348,7 +341,6 @@ try {
         case 'remplir_auto':
             $debut = $input['debut'] ?? $_GET['debut'] ?? date('Y-m-d');
             $fin = $input['fin'] ?? $_GET['fin'] ?? date('Y-m-d');
-            $logger->log('DEBUG', "remplir_auto: debut=$debut, fin=$fin");
             $res = remplirPlanningAuto($debut, $fin);
             jsonResponse(['success' => true, 'data' => $res]);
             break;

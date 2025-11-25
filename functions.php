@@ -246,9 +246,6 @@ function addTournee($data) {
 function updateTournee($id, $data) {
     $pdo = Database::getInstance();
     
-    // Log pour déboguer
-    error_log("updateTournee - ID: $id, Durée: " . ($data['duree'] ?? 'NULL'));
-    
     $sql = "UPDATE " . DB_PREFIX . "tournees
             SET nom=?, type_tournee=?, zone_geo=?, type_vehicule=?, permis_requis=?, difficulte=?, duree=?
             WHERE id=?";
@@ -265,9 +262,6 @@ function updateTournee($id, $data) {
         $data['duree'] ?? 'journée',
         $id
     ]);
-    
-    // Log du résultat
-    error_log("updateTournee - Résultat: " . ($result ? 'SUCCESS' : 'FAILED'));
     
     return $result;
 }
@@ -790,9 +784,6 @@ function getTauxOccupation($dateDebut, $dateFin) {
         
         $taux = round(($casesRemplies / $totalCases) * 100, 1);
         
-        // Log pour debug
-        error_log("Taux occupation: $casesRemplies cases remplies / $totalCases total = $taux%");
-        
         return $taux;
         
     } catch (Exception $e) {
@@ -908,7 +899,6 @@ function getStatistiques() {
     // Calculer le taux d'occupation de la semaine en cours
     try {
         $stats['taux_occupation'] = getTauxOccupation($debutSemaine, $finSemaine);
-        error_log("Taux occupation calculé: " . $stats['taux_occupation']);
     } catch (Exception $e) {
         error_log("Erreur calcul taux occupation: " . $e->getMessage());
         $stats['taux_occupation'] = 0;
@@ -1064,19 +1054,8 @@ function optimiserContinuiteConducteurs($dateDebut, $dateFin, &$logs) {
                 $scoreEchangeTotal = $scoreEchange1['score'] + $scoreEchange2['score'];
                 $gainScore = $scoreEchangeTotal - $scoreActuelTotal;
                 
-                // Calculer les pertes/gains individuels
-                $perteGainConducteur1 = $scoreEchange1['score'] - $scoreActuel1;
-                $perteGainConducteur2 = $scoreEchange2['score'] - $scoreActuel2;
-                
-                // RÈGLE : Ne PAS échanger si un des conducteurs perd plus de 5 points
-                // (évite de sacrifier un conducteur sur sa tournée maîtrisée)
-                if ($perteGainConducteur1 < -5 || $perteGainConducteur2 < -5) {
-                    $optimisationLogs[] = "  ⏭️ Pas d'échange [$date $periode] : Perte individuelle trop importante (C1: " . round($perteGainConducteur1, 1) . ", C2: " . round($perteGainConducteur2, 1) . ")";
-                    continue;
-                }
-                
-                // Échanger si gain global >= +2 points ET aucune perte individuelle > 5 points
-                if ($gainScore >= 2) {
+                // Échanger si score équivalent (±3 points) pour favoriser la continuité
+                if ($gainScore >= -3) {
                     $pdo->beginTransaction();
                     try {
                         // Échanger les tournées
@@ -1123,7 +1102,7 @@ function remplirPlanningAuto($dateDebut, $dateFin) {
     $conducteurs = getConducteurs();
     $succes = 0;
     $echecs = 0;
-    $logs = ["🔴🔴🔴 FICHIER FUNCTIONS.PHP VERSION 1817 LIGNES - PAS DE PHASE 2.5 🔴🔴🔴"]; // Pour diagnostiquer
+    $logs = []; // Pour diagnostiquer
     
     $dateActuelle = new DateTime($dateDebut);
     $dateLimite = new DateTime($dateFin);

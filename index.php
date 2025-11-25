@@ -183,37 +183,42 @@ $user = $_SESSION['user'];
             <div class="tab-pane fade" id="planning" role="tabpanel">
                 <div class="card shadow-sm">
                     <div class="card-header bg-gradient-primary text-white">
-                        <div class="row align-items-center">
-                            <div class="col-md-8 d-flex align-items-center gap-3">
-                                <h5 class="mb-0"><i class="bi bi-calendar3 me-2"></i>Planning Hebdomadaire</h5>
-                                <div class="d-flex gap-2 align-items-center">
+                        <div class="row g-2">
+                            <div class="col-12">
+                                <h5 class="mb-2"><i class="bi bi-calendar3 me-2"></i>Planning Hebdomadaire</h5>
+                            </div>
+                            <div class="col-12 col-lg-7">
+                                <div class="d-flex flex-wrap gap-2 align-items-center">
                                     <label class="text-white mb-0 small">Période :</label>
-                                    <input type="date" id="planning-date-debut" class="form-control form-control-sm" style="width: 150px;">
+                                    <input type="date" id="planning-date-debut" class="form-control form-control-sm planning-date-input">
                                     <span class="text-white small">au</span>
-                                    <input type="date" id="planning-date-fin" class="form-control form-control-sm" style="width: 150px;">
+                                    <input type="date" id="planning-date-fin" class="form-control form-control-sm planning-date-input">
                                     <button class="btn btn-light btn-sm" onclick="chargerPlanning()">
                                         <i class="bi bi-check-lg me-1"></i>Valider
                                     </button>
                                 </div>
                             </div>
-                            <div class="col-md-4">
-                                <div class="d-flex gap-2 justify-content-end">
-                                    <button class="btn btn-info" onclick="actualiserPlanning()" title="Régénère le planning en tenant compte des modifications de disponibilité">
-                                        <i class="bi bi-arrow-repeat me-1"></i>Actualiser suite modifications
+                            <div class="col-12 col-lg-5">
+                                <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
+                                    <button class="btn btn-secondary btn-sm" onclick="imprimerPlanning()" title="Imprimer la semaine affichée">
+                                        <i class="bi bi-printer me-1"></i><span class="d-none d-md-inline">Imprimer</span>
                                     </button>
-                                    <div class="btn-group">
-                                        <button class="btn btn-danger" onclick="effacerPlanningPeriode()" title="Efface uniquement la période affichée">
-                                            <i class="bi bi-trash me-1"></i>Effacer période
+                                    <button class="btn btn-info btn-sm" onclick="actualiserPlanning()" title="Régénère le planning en tenant compte des modifications de disponibilité">
+                                        <i class="bi bi-arrow-repeat me-1"></i><span class="d-none d-md-inline">Actualiser</span>
+                                    </button>
+                                    <div class="btn-group btn-group-delete">
+                                        <button class="btn btn-orange btn-sm" onclick="effacerPlanningPeriode()" title="Efface uniquement la semaine affichée">
+                                            <i class="bi bi-trash me-1"></i><span class="d-none d-sm-inline">Effacer semaine</span>
                                         </button>
                                         <?php if ($user['role'] === 'admin'): ?>
-                                        <button class="btn btn-danger" onclick="effacerPlanningComplet()" title="Efface TOUT le planning (toutes les semaines) - Admin uniquement">
-                                            <i class="bi bi-trash-fill me-1"></i>Effacer TOUT
+                                        <button class="btn btn-danger btn-sm" onclick="effacerPlanningComplet()" title="Efface TOUT le planning (toutes les semaines) - Admin uniquement">
+                                            <i class="bi bi-trash-fill me-1"></i><span class="d-none d-sm-inline">Effacer TOUT</span>
                                         </button>
                                         <?php endif; ?>
-                                        <button class="btn btn-warning" onclick="remplirPlanningAuto()">
-                                            <i class="bi bi-robot me-1"></i>IA Auto
-                                        </button>
                                     </div>
+                                    <button class="btn btn-warning btn-sm" onclick="remplirPlanningAuto()">
+                                        <i class="bi bi-robot me-1"></i><span class="d-none d-sm-inline">IA</span>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -505,11 +510,13 @@ $user = $_SESSION['user'];
                             </h2>
                             <div id="section2" class="accordion-collapse collapse" data-bs-parent="#accordionNotice">
                                 <div class="accordion-body">
-                                    <h6>Navigation</h6>
+                                    <h6>Sélection de la période</h6>
                                     <ul>
-                                        <li>Utilisez les boutons <strong>Semaine précédente / Semaine suivante</strong> pour naviguer</li>
-                                        <li>Le planning affiche une semaine complète (Lundi à Dimanche)</li>
-                                        <li>Chaque journée est divisée en <strong>Matin</strong> et <strong>Après-midi</strong></li>
+                                        <li>Choisissez une période de début et de fin avec les champs <strong>dates</strong></li>
+                                        <li>Cliquez sur <strong>"Valider"</strong> pour charger le planning</li>
+                                        <li>Utilisez les boutons <strong>◀ Semaine précédente / Semaine suivante ▶</strong> pour naviguer semaine par semaine</li>
+                                        <li>Le planning affiche une semaine complète (Lundi à Samedi, 6 jours ouvrés)</li>
+                                        <li>Chaque journée peut être divisée en <strong>Matin</strong> et <strong>Après-midi</strong> selon la tournée</li>
                                     </ul>
                                     
                                     <h6 class="mt-3">Attribution manuelle</h6>
@@ -518,34 +525,59 @@ $user = $_SESSION['user'];
                                         <li>Sélectionnez un conducteur dans la liste</li>
                                         <li>Le système vérifie automatiquement :
                                             <ul>
-                                                <li>✅ Permis requis</li>
-                                                <li>✅ Disponibilité (congés, repos récurrents)</li>
-                                                <li>✅ Double attribution</li>
+                                                <li>✅ Permis requis (peut en avoir plusieurs)</li>
+                                                <li>✅ Disponibilité (congés, repos récurrents, fin de contrat)</li>
+                                                <li>✅ Double attribution (pas deux créneaux simultanés)</li>
                                             </ul>
                                         </li>
-                                        <li>Un score IA est affiché pour chaque conducteur disponible</li>
+                                        <li>Un score IA est affiché pour chaque conducteur disponible (0-100%)</li>
                                     </ol>
                                     
-                                    <h6 class="mt-3">Remplissage automatique (IA)</h6>
+                                    <h6 class="mt-3">🤖 Génération automatique (IA Auto)</h6>
+                                    <p>Le bouton orange <strong>"IA Auto"</strong> génère le planning de zéro avec l'intelligence artificielle :</p>
                                     <ol>
-                                        <li>Cliquez sur <strong>"Remplir auto (IA)"</strong></li>
-                                        <li><strong>Phase 1 :</strong> Tous les titulaires sont affectés à leur tournée</li>
-                                        <li><strong>Phase 2 :</strong> Les tournées restantes sont complétées avec les meilleurs remplaçants</li>
-                                        <li>Les titulaires ne sont <strong>jamais</strong> réaffectés ailleurs en mode auto</li>
+                                        <li>Option d'<strong>effacement</strong> des attributions existantes (recommandé)</li>
+                                        <li><strong>Phase 1 :</strong> Tous les titulaires sont affectés en priorité à leur tournée</li>
+                                        <li><strong>Phase 2 :</strong> Les tournées maîtrisées sont attribuées aux conducteurs qui les connaissent</li>
+                                        <li><strong>Phase 3 :</strong> Les créneaux restants sont complétés avec les meilleurs remplaçants selon le score IA</li>
+                                        <li>Optimisation automatique pour minimiser les trous et maximiser la continuité</li>
                                     </ol>
+                                    <p><em>💡 À utiliser pour créer un nouveau planning ou repartir de zéro.</em></p>
                                     
-                                    <h6 class="mt-3">Actualisation</h6>
-                                    <p>Le bouton <strong>"Actualiser scores"</strong> réanalyse le planning et :</p>
+                                    <h6 class="mt-3">🔄 Actualisation du planning</h6>
+                                    <p>Le bouton bleu <strong>"Actualiser"</strong> met à jour le planning existant sans tout effacer :</p>
                                     <ol>
-                                        <li>Retire les conducteurs devenus indisponibles (nouveaux congés, repos récurrents, fin de contrat)</li>
-                                        <li>Réattribue les créneaux vides avec la logique IA (titulaires prioritaires)</li>
-                                        <li>Recalcule tous les scores de performance</li>
+                                        <li>✖️ <strong>Supprime</strong> les attributions devenues invalides :
+                                            <ul>
+                                                <li>Conducteurs indisponibles (nouveaux congés, repos)</li>
+                                                <li>Conducteurs sans le bon permis</li>
+                                                <li>Titulaires assignés à la mauvaise tournée</li>
+                                            </ul>
+                                        </li>
+                                        <li>🔄 <strong>Recalcule</strong> tous les scores IA des attributions existantes</li>
+                                        <li>⭐ <strong>Réattribue</strong> les titulaires en priorité sur leur tournée</li>
+                                        <li>✅ <strong>Complète</strong> uniquement les créneaux vides avec l'IA</li>
                                     </ol>
-                                    <p><em>💡 Utile après avoir modifié les disponibilités des conducteurs ou les critères IA.</em></p>
+                                    <p><em>💡 À utiliser après avoir modifié les disponibilités, permis, ou tournées maîtrisées.</em></p>
+                                    
+                                    <h6 class="mt-3">🗑️ Effacement</h6>
+                                    <ul>
+                                        <li><strong>Bouton orange "Effacer semaine affichée"</strong> : Supprime uniquement la semaine actuellement visible à l'écran</li>
+                                        <li><strong>Bouton rouge "Effacer TOUT"</strong> (Admin uniquement) : Supprime TOUTES les attributions sur toutes les semaines (2 confirmations requises)</li>
+                                    </ul>
+                                    
+                                    <div class="alert alert-info">
+                                        <i class="bi bi-lightbulb me-2"></i>
+                                        <strong>Différence clé :</strong>
+                                        <ul class="mb-0">
+                                            <li><strong>IA Auto</strong> 🤖 = Génération complète de zéro (peut effacer l'existant)</li>
+                                            <li><strong>Actualiser</strong> 🔄 = Nettoyage + complétion intelligente (garde les attributions valides)</li>
+                                        </ul>
+                                    </div>
                                     
                                     <p class="alert alert-warning mb-0">
                                         <i class="bi bi-exclamation-triangle me-2"></i>
-                                        <strong>Attention :</strong> En mode manuel, vous pouvez affecter un titulaire à une autre tournée, mais une confirmation sera demandée.
+                                        <strong>Attention :</strong> En mode manuel, vous pouvez affecter un titulaire à une autre tournée, mais une confirmation sera demandée car cela peut perturber l'organisation.
                                     </p>
                                 </div>
                             </div>
@@ -566,25 +598,49 @@ $user = $_SESSION['user'];
                                         <li>Renseignez les informations :
                                             <ul>
                                                 <li><strong>Nom, Prénom</strong> (obligatoires)</li>
-                                                <li><strong>Permis :</strong> Sélection multiple possible</li>
-                                                <li><strong>Expérience :</strong> Nombre d'années (influence le score IA)</li>
-                                                <li><strong>Statut :</strong> CDI, CDD, Intérimaire, Temporaire</li>
-                                                <li><strong>Tournée titulaire :</strong> Tournée principale du conducteur</li>
-                                                <li><strong>Tournées maîtrisées :</strong> Tournées qu'il connaît bien</li>
+                                                <li><strong>Permis :</strong> Sélection multiple possible (B, C, C+E, D, EC, etc.)</li>
+                                                <li><strong>Date d'embauche :</strong> Pour calculer automatiquement l'ancienneté</li>
+                                                <li><strong>Expérience :</strong> Calculée automatiquement depuis la date d'embauche, ou renseignée manuellement (influence le score IA)</li>
+                                                <li><strong>Statut :</strong> CDI, CDD, Intérimaire, Sous-traitant</li>
+                                                <li><strong>Tournée titulaire :</strong> Tournée principale dont le conducteur est responsable (priorité absolue)</li>
+                                                <li><strong>Tournées maîtrisées :</strong> Tournées qu'il connaît bien et peut assurer efficacement (bonus au score IA)</li>
                                             </ul>
                                         </li>
                                     </ol>
                                     
                                     <h6 class="mt-3">Disponibilité</h6>
                                     <ul>
-                                        <li><strong>Repos récurrents :</strong> Jours fixes de repos chaque semaine (ex: Dimanche)</li>
-                                        <li><strong>Congés :</strong> Périodes d'absence avec dates de début et fin</li>
-                                        <li><strong>CDD/Temporaire :</strong> Date de fin de contrat</li>
+                                        <li><strong>Repos récurrents :</strong> Jours fixes de repos chaque semaine (ex: Samedi + Dimanche)
+                                            <ul>
+                                                <li><em>Type "toutes"</em> : Le conducteur est en repos ces jours sur toutes les tournées</li>
+                                                <li><em>Type "tournee_titulaire"</em> : En repos uniquement sur sa tournée titulaire (peut remplacer ailleurs)</li>
+                                            </ul>
+                                        </li>
+                                        <li><strong>Congés/Absences :</strong> Périodes d'absence avec dates de début et fin
+                                            <ul>
+                                                <li>Types disponibles : Congés payés, Maladie, Formation, Sans solde, RTT, Autre</li>
+                                                <li>Le conducteur est automatiquement bloqué dans le planning pendant cette période</li>
+                                            </ul>
+                                        </li>
+                                        <li><strong>CDD/Contrat temporaire :</strong> Date de fin de contrat
+                                            <ul>
+                                                <li>Le conducteur n'apparaît plus dans le planning après cette date</li>
+                                            </ul>
+                                        </li>
+                                    </ul>
+                                    
+                                    <h6 class="mt-3">Badge de performance</h6>
+                                    <p>Chaque conducteur affiche un score de performance sur 100 basé sur ses attributions récentes :</p>
+                                    <ul>
+                                        <li><span class="badge bg-success">≥ 80</span> Excellent</li>
+                                        <li><span class="badge bg-info">60-79</span> Bon</li>
+                                        <li><span class="badge bg-warning">40-59</span> Moyen</li>
+                                        <li><span class="badge bg-danger">&lt; 40</span> Faible</li>
                                     </ul>
                                     
                                     <p class="alert alert-info mb-0">
                                         <i class="bi bi-lightbulb me-2"></i>
-                                        Un conducteur est automatiquement bloqué dans le planning s'il est en congé, repos récurrent, ou hors période de contrat.
+                                        Un conducteur est automatiquement bloqué dans le planning s'il est en congé, en repos récurrent, ou hors période de contrat. La vérification se fait en temps réel lors de l'attribution.
                                     </p>
                                 </div>
                             </div>
@@ -604,26 +660,60 @@ $user = $_SESSION['user'];
                                         <li>Cliquez sur <strong>"Nouvelle tournée"</strong></li>
                                         <li>Configurez :
                                             <ul>
-                                                <li><strong>Nom :</strong> Identifiant de la tournée</li>
-                                                <li><strong>Type de tournée :</strong> Express, Messagerie, Standard, etc. (détermine l'ordre d'affichage automatiquement)</li>
-                                                <li><strong>Permis requis :</strong> Sélection multiple des permis nécessaires</li>
-                                                <li><strong>Type de véhicule</strong></li>
-                                                <li><strong>Jours actifs :</strong> Quels jours de la semaine cette tournée fonctionne</li>
-                                                <li><strong>Durée :</strong> 4 options disponibles :
+                                                <li><strong>Nom :</strong> Identifiant de la tournée (ex: T01, Express Nord)</li>
+                                                <li><strong>Type de tournée :</strong> Express, Messagerie, Standard, etc.
                                                     <ul>
-                                                        <li><em>Matin</em> - Occupe 1 ligne (période matin uniquement)</li>
-                                                        <li><em>Après-midi</em> - Occupe 1 ligne (période après-midi uniquement)</li>
-                                                        <li><em>Journée</em> - Occupe 1 ligne (tournée sur toute la journée)</li>
-                                                        <li><em>Matin et après-midi</em> - Occupe 2 lignes distinctes dans le planning (1 ligne matin + 1 ligne après-midi)</li>
+                                                        <li>Détermine automatiquement l'ordre d'affichage dans le planning</li>
+                                                        <li>Modifiez l'ordre dans Paramètres → Types de tournée</li>
                                                     </ul>
                                                 </li>
+                                                <li><strong>Permis requis :</strong> Sélection multiple des permis nécessaires
+                                                    <ul>
+                                                        <li>Exemple : C + EC = Le conducteur doit avoir C OU EC</li>
+                                                        <li>Les conducteurs sans le permis requis ne peuvent pas être assignés</li>
+                                                    </ul>
+                                                </li>
+                                                <li><strong>Type de véhicule :</strong> 12T, 19T, Fourgon, VL, etc.</li>
+                                                <li><strong>Zone géographique :</strong> Secteur de la tournée (optionnel)</li>
+                                                <li><strong>Difficulté :</strong> Niveau de 1 (facile) à 5 (très difficile)</li>
+                                                <li><strong>Jours actifs :</strong> Quels jours de la semaine cette tournée fonctionne
+                                                    <ul>
+                                                        <li>Les jours non cochés : la tournée n'apparaît pas dans le planning</li>
+                                                    </ul>
+                                                </li>
+                                                <li><strong>Durée :</strong> 4 options disponibles :
+                                                    <ul>
+                                                        <li><em>🌅 Matin uniquement</em> - Occupe 1 ligne (période matin seulement)</li>
+                                                        <li><em>🌆 Après-midi uniquement</em> - Occupe 1 ligne (période après-midi seulement)</li>
+                                                        <li><em>☀️ Journée complète</em> - Occupe 1 ligne (tournée sur toute la journée, même conducteur matin et après-midi)</li>
+                                                        <li><em>🔄 Matin et après-midi séparés</em> - Occupe 2 lignes distinctes dans le planning (permet d'attribuer un conducteur différent le matin et l'après-midi)</li>
+                                                    </ul>
+                                                </li>
+                                                <li><strong>Logo de tournée :</strong> Image personnalisée pour identifier visuellement la tournée (PNG, JPG, max 500KB)</li>
                                             </ul>
                                         </li>
                                     </ol>
                                     
-                                    <p class="alert alert-success mb-0">
+                                    <h6 class="mt-3">Ordre d'affichage</h6>
+                                    <p>L'ordre des tournées dans le planning est déterminé automatiquement par :</p>
+                                    <ol>
+                                        <li><strong>Type de tournée</strong> : Chaque type a un numéro d'ordre (1, 2, 3...)</li>
+                                        <li><strong>Nom de tournée</strong> : Ordre alphabétique au sein d'un même type</li>
+                                    </ol>
+                                    <p><em>💡 Pour réorganiser, modifiez l'ordre des types dans Paramètres → Types de tournée</em></p>
+                                    
+                                    <div class="alert alert-info">
                                         <i class="bi bi-lightbulb me-2"></i>
-                                        L'ordre d'affichage dans le planning est <strong>automatiquement déterminé par le type de tournée</strong>. Modifiez l'ordre des types dans l'onglet Paramètres pour réorganiser le planning.
+                                        <strong>Exemple de durée :</strong>
+                                        <ul class="mb-0">
+                                            <li>Une tournée "Express" avec durée "Journée" = 1 seul conducteur pour toute la journée</li>
+                                            <li>Une tournée "Standard" avec durée "Matin et après-midi séparés" = 2 lignes dans le planning, vous pouvez mettre un conducteur différent le matin et l'après-midi</li>
+                                        </ul>
+                                    </div>
+                                    
+                                    <p class="alert alert-success mb-0">
+                                        <i class="bi bi-info-circle me-2"></i>
+                                        Les tournées inactives pour un jour donné (selon les jours actifs) n'apparaissent pas dans le planning de ce jour.
                                     </p>
                                 </div>
                             </div>
@@ -778,33 +868,72 @@ $user = $_SESSION['user'];
                                 <div class="accordion-body">
                                     <h6>🎯 Optimiser l'attribution automatique</h6>
                                     <ul>
-                                        <li>Définissez un <strong>titulaire</strong> pour chaque tournée régulière</li>
-                                        <li>Indiquez les <strong>tournées maîtrisées</strong> pour les remplaçants</li>
+                                        <li>Définissez un <strong>titulaire</strong> pour chaque tournée régulière (priorité absolue)</li>
+                                        <li>Indiquez les <strong>tournées maîtrisées</strong> pour les remplaçants (bonus au score IA)</li>
                                         <li>Maintenez à jour les <strong>congés</strong> et <strong>repos récurrents</strong></li>
+                                        <li>Renseignez la <strong>date d'embauche</strong> pour calculer automatiquement l'ancienneté</li>
+                                        <li>Utilisez <strong>"Actualiser"</strong> après des modifications de disponibilité plutôt que de tout refaire</li>
                                     </ul>
                                     
                                     <h6 class="mt-3">📊 Interpréter le score de performance</h6>
                                     <ul>
-                                        <li><span class="badge bg-success">≥ 80%</span> Excellent : Optimisation maximale</li>
-                                        <li><span class="badge bg-info">60-79%</span> Bon : Planning équilibré</li>
+                                        <li><span class="badge bg-success">≥ 80%</span> Excellent : Optimisation maximale, planning idéal</li>
+                                        <li><span class="badge bg-info">60-79%</span> Bon : Planning équilibré et fonctionnel</li>
                                         <li><span class="badge bg-warning">40-59%</span> Moyen : Possibilités d'amélioration</li>
-                                        <li><span class="badge bg-danger">&lt; 40%</span> Faible : Réviser les attributions</li>
+                                        <li><span class="badge bg-danger">&lt; 40%</span> Faible : Réviser les attributions ou les critères IA</li>
+                                    </ul>
+                                    <p><em>Le score global est affiché dans le bandeau en haut de page et se met à jour automatiquement.</em></p>
+                                    
+                                    <h6 class="mt-3">⚡ Raccourcis et astuces</h6>
+                                    <ul>
+                                        <li>🔍 Double-cliquez sur une tournée pour voir ses détails complets</li>
+                                        <li>📱 Interface responsive : utilisable sur mobile et tablette</li>
+                                        <li>🔄 Navigation par semaine avec les flèches ◀️ ▶️</li>
+                                        <li>🎨 Chaque tournée peut avoir son logo personnalisé</li>
+                                        <li>📈 Le badge de performance se met à jour en temps réel</li>
+                                        <li>🗓️ Les tournées inactives pour un jour donné n'apparaissent pas dans le planning</li>
+                                        <li>💾 Le planning est sauvegardé automatiquement à chaque attribution</li>
                                     </ul>
                                     
-                                    <h6 class="mt-3">⚡ Raccourcis</h6>
+                                    <h6 class="mt-3">🔒 Règles strictes appliquées</h6>
                                     <ul>
-                                        <li>Double-cliquez sur une tournée pour voir ses détails</li>
-                                        <li>Le badge de performance dans le bandeau se met à jour automatiquement</li>
-                                        <li>Les tournées inactives pour un jour donné n'apparaissent pas</li>
+                                        <li>❌ Un conducteur ne peut pas être attribué deux fois au même moment (même jour + même période)</li>
+                                        <li>❌ Les permis requis doivent correspondre (le conducteur doit avoir AU MOINS UN des permis requis)</li>
+                                        <li>❌ Les congés et repos bloquent automatiquement l'attribution</li>
+                                        <li>❌ Les CDD/contrats temporaires ne peuvent pas être assignés après leur date de fin</li>
+                                        <li>✅ Les titulaires sont toujours prioritaires en mode automatique (IA)</li>
+                                        <li>✅ Confirmation demandée si vous affectez manuellement un titulaire ailleurs que sur sa tournée</li>
                                     </ul>
                                     
-                                    <h6 class="mt-3">🔒 Règles strictes</h6>
-                                    <ul>
-                                        <li>❌ Un conducteur ne peut pas être attribué deux fois le même jour/période</li>
-                                        <li>❌ Les permis requis doivent correspondre</li>
-                                        <li>❌ Les congés et repos bloquent automatiquement</li>
-                                        <li>✅ Les titulaires sont toujours prioritaires en mode auto</li>
-                                    </ul>
+                                    <h6 class="mt-3">🚀 Workflow recommandé</h6>
+                                    <ol>
+                                        <li><strong>Configuration initiale :</strong>
+                                            <ul>
+                                                <li>Créer tous les conducteurs avec leurs permis et dates d'embauche</li>
+                                                <li>Créer toutes les tournées avec permis requis et jours actifs</li>
+                                                <li>Assigner les titulaires et tournées maîtrisées</li>
+                                            </ul>
+                                        </li>
+                                        <li><strong>Génération du planning :</strong>
+                                            <ul>
+                                                <li>Sélectionner la période (ex: 4 semaines)</li>
+                                                <li>Utiliser "IA Auto" avec effacement pour générer tout le planning</li>
+                                                <li>Vérifier et ajuster manuellement si nécessaire</li>
+                                            </ul>
+                                        </li>
+                                        <li><strong>Maintenance hebdomadaire :</strong>
+                                            <ul>
+                                                <li>Ajouter les congés/absences dès qu'ils sont connus</li>
+                                                <li>Utiliser "Actualiser" pour nettoyer et réoptimiser</li>
+                                                <li>Compléter manuellement les cas spéciaux</li>
+                                            </ul>
+                                        </li>
+                                    </ol>
+                                    
+                                    <div class="alert alert-success">
+                                        <i class="bi bi-star me-2"></i>
+                                        <strong>Astuce Pro :</strong> Ajustez les critères IA dans les Paramètres selon vos priorités. Par exemple, augmentez le bonus "Connaissance tournée" si vous préférez privilégier l'expérience sur une tournée plutôt que l'ancienneté générale.
+                                    </div>
                                 </div>
                             </div>
                         </div>

@@ -202,11 +202,9 @@ function getSunday() {
 async function chargerStats() {
     try {
         const { data } = await apiCall('get_stats');
-        console.log('Stats reçues:', data); // Debug
         document.getElementById('stat-conducteurs').textContent = data.conducteurs || 0;
         document.getElementById('stat-tournees').textContent = data.tournees || 0;
         document.getElementById('stat-taux-occupation').textContent = `${data.taux_occupation || 0}%`;
-        console.log('Taux occupation:', data.taux_occupation); // Debug
         
         // Score de performance global du planning
         const scoreRes = await apiCall(`get_score_global&debut=${getMonday()}&fin=${getSunday()}`);
@@ -864,8 +862,6 @@ async function sauvegarderTournee() {
         duree: document.getElementById('t-duree').value
     };
     
-    console.log('Données à enregistrer:', data);
-    
     try {
         if (id) {
             await apiCall('update_tournee', 'POST', { id: +id, ...data });
@@ -1024,7 +1020,7 @@ function renderPlanning(data, debut, fin) {
             }
         }
         
-        html += `<tr><td><strong>${t.nom}</strong>${logoTournee}<br><small class="text-muted">${t.duree || 'non défini'}</small></td>`;
+        html += `<tr><td><small class="text-muted">${t.type_tournee || ''}</small><br><strong>${t.nom}</strong><br><small class="text-muted duree-tournee">${t.duree || 'non défini'}</small></td>`;
         dates.forEach(d => {
             const dateStr = d.toISOString().split('T')[0];
             html += `<td class="p-1">`;
@@ -1392,17 +1388,61 @@ async function sauvegarderAttribution(select) {
 }
 
 
-// Fonction pour effacer le planning de la période affichée uniquement
+// Fonction pour effacer le planning de la semaine affichée uniquement
 async function effacerPlanningPeriode() {
-    const debut = document.getElementById('planning-date-debut').value;
-    const fin = document.getElementById('planning-date-fin').value;
+    // Récupérer la semaine actuellement affichée dans le planning
+    const periodeText = document.getElementById('periode-affichee')?.textContent || '';
     
-    if (!debut || !fin) {
-        showToast('Attention', 'Sélectionnez une période valide', 'warning');
+    // Extraire les dates depuis AppState.planningFullData ou calculer depuis currentWeekOffset
+    const debutInput = document.getElementById('planning-date-debut').value;
+    const finInput = document.getElementById('planning-date-fin').value;
+    
+    if (!debutInput || !finInput) {
+        showToast('Attention', 'Aucune période de planning affichée', 'warning');
         return;
     }
+    
+    // Calculer la semaine affichée
+    const dateDebut = new Date(debutInput);
+    const aujourdhui = new Date();
+    aujourdhui.setHours(0, 0, 0, 0);
+    
+    // Générer toutes les semaines de la période sélectionnée
+    const toutesLesSemaines = [];
+    let currentWeekStart = new Date(dateDebut);
+    currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay() + 1); // Lundi
+    
+    const dateFin = new Date(finInput);
+    while (currentWeekStart <= dateFin) {
+        const weekEnd = new Date(currentWeekStart);
+        weekEnd.setDate(weekEnd.getDate() + 5); // Samedi (6 jours ouvrés)
+        
+        toutesLesSemaines.push({
+            debut: new Date(currentWeekStart),
+            fin: weekEnd
+        });
+        
+        currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+    }
+    
+    // Filtrer les semaines futures
+    const semaines = toutesLesSemaines.filter(semaine => semaine.fin >= aujourdhui);
+    
+    // Obtenir la semaine actuellement affichée selon l'offset
+    const semaineAffichee = semaines[AppState.currentWeekOffset] || semaines[0];
+    
+    if (!semaineAffichee) {
+        showToast('Attention', 'Aucune semaine valide à effacer', 'warning');
+        return;
+    }
+    
+    const debut = semaineAffichee.debut.toISOString().split('T')[0];
+    const fin = semaineAffichee.fin.toISOString().split('T')[0];
+    
+    const debutFormate = semaineAffichee.debut.toLocaleDateString('fr-FR');
+    const finFormate = semaineAffichee.fin.toLocaleDateString('fr-FR');
 
-    if (!confirm(`Êtes-vous sûr de vouloir effacer le planning du ${debut} au ${fin} ?\n\nToutes les attributions seront supprimées.`)) {
+    if (!confirm(`Êtes-vous sûr de vouloir effacer le planning de la semaine affichée ?\n\nDu ${debutFormate} au ${finFormate}\n\nToutes les attributions de cette semaine seront supprimées.`)) {
         return;
     }
 
@@ -1413,7 +1453,7 @@ async function effacerPlanningPeriode() {
         });
         
         if (response.success) {
-            showToast('Succès', `Planning effacé (${response.nb_supprimees || 0} attributions supprimées)`, 'success');
+            showToast('Succès', `Planning de la semaine effacé (${response.nb_supprimees || 0} attributions supprimées)`, 'success');
             await chargerPlanning(); // Recharge le planning
         }
     } catch (error) {
@@ -1550,7 +1590,6 @@ async function actualiserPlanning() {
                 if (conducteur.tournee_titulaire && conducteur.tournee_titulaire != attribution.tournee_id) {
                     doitSupprimer = true;
                     raison = `Titulaire de T${conducteur.tournee_titulaire}, pas de T${attribution.tournee_id}`;
-                    console.log(`Conducteur ${conducteur.prenom} ${conducteur.nom} ${raison}`);
                 }
                 
                 // Vérifier la disponibilité du conducteur (seulement si pas déjà marqué à supprimer)
@@ -1567,7 +1606,6 @@ async function actualiserPlanning() {
             }
             
             if (doitSupprimer) {
-                console.log(`Suppression attribution: ${conducteur?.prenom} ${conducteur?.nom} sur T${attribution.tournee_id} - ${raison}`);
                 await apiCall('delete_attribution', 'POST', { id: attribution.id });
                 suppressions++;
             }
@@ -2107,6 +2145,205 @@ async function ouvrirMonProfil() {
         console.error('Erreur ouverture profil:', error);
         showToast('Erreur', 'Impossible d\'ouvrir le profil', 'danger');
     }
+}
+
+// ==================== IMPRESSION ====================
+
+function imprimerPlanning() {
+    // Récupérer les informations de la période affichée
+    const periodeText = document.getElementById('periode-affichee')?.textContent || '';
+    const semaineText = document.getElementById('semaine-affichee')?.textContent || 'Planning';
+    
+    // Créer une copie du planning pour l'impression
+    const planningGrid = document.getElementById('planning-grid');
+    if (!planningGrid) {
+        showToast('Erreur', 'Aucun planning à imprimer', 'danger');
+        return;
+    }
+    
+    // Récupérer le logo de l'entreprise s'il existe
+    const logoElement = document.querySelector('.navbar-logo');
+    const logoSrc = logoElement ? logoElement.src : '';
+    
+    // Cloner et nettoyer le contenu du planning
+    const planningClone = planningGrid.cloneNode(true);
+    
+    // Nettoyer : remplacer les selects par le texte du conducteur sélectionné
+    const selects = planningClone.querySelectorAll('select');
+    selects.forEach(select => {
+        const selectedOption = select.options[select.selectedIndex];
+        if (selectedOption && selectedOption.value) {
+            const span = document.createElement('span');
+            span.className = 'conducteur-nom';
+            span.textContent = selectedOption.textContent.replace(/\s*\(\d+%\)\s*$/, '').trim();
+            select.parentNode.replaceChild(span, select);
+        } else {
+            select.remove();
+        }
+    });
+    
+    // Supprimer tous les badges et scores
+    planningClone.querySelectorAll('.badge, .conducteur-score').forEach(el => el.remove());
+    
+    // Supprimer tous les logos/emojis des tournées (images et spans avec emojis)
+    planningClone.querySelectorAll('td:first-child img, td:first-child span[style*="font-size: 1.5rem"]').forEach(el => el.remove());
+    
+    // Créer le contenu HTML pour l'impression
+    const printContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Planning - ${semaineText}</title>
+            <style>
+                @page {
+                    size: landscape;
+                    margin: 1cm;
+                }
+                body {
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    padding: 20px;
+                }
+                .print-header {
+                    text-align: center;
+                    margin-bottom: 15px;
+                    border-bottom: 2px solid #0052D4;
+                    padding-bottom: 10px;
+                }
+                .print-header h1 {
+                    margin: 5px 0;
+                    color: #0052D4;
+                    font-size: 20px;
+                }
+                .print-header p {
+                    margin: 3px 0;
+                    font-size: 12px;
+                    color: #666;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 11px;
+                }
+                th, td {
+                    border: 1px solid #333;
+                    padding: 4px 3px;
+                    text-align: center;
+                    vertical-align: top;
+                    line-height: 1.2;
+                }
+                th {
+                    background-color: #0052D4;
+                    color: white;
+                    font-weight: bold;
+                }
+                td:first-child, th:first-child {
+                    text-align: left;
+                    font-weight: bold;
+                    background-color: #f8f9fa;
+                    min-width: 120px;
+                }
+                td:first-child small:first-child {
+                    display: block;
+                    font-size: 8px;
+                    color: #666;
+                    font-weight: normal;
+                    margin-bottom: 1px;
+                    line-height: 1.1;
+                }
+                td:first-child strong {
+                    display: block;
+                    font-size: 11px;
+                    margin: 1px 0;
+                    line-height: 1.2;
+                }
+                td:first-child .duree-tournee {
+                    display: block;
+                    font-size: 7px;
+                    color: #999;
+                    font-style: italic;
+                    margin-top: 1px;
+                    margin-bottom: 2px;
+                    line-height: 1.1;
+                }
+                tr:nth-child(even) td:first-child {
+                    background-color: #e9ecef;
+                }
+                .conducteur-cell {
+                    min-height: 20px;
+                    display: block;
+                    font-size: 10px;
+                    padding: 2px;
+                    line-height: 1.3;
+                }
+                .conducteur-nom {
+                    font-weight: bold;
+                    display: block;
+                    margin-top: 2px;
+                    font-size: 12px;
+                }
+                /* Masquer les éléments inutiles pour l'impression */
+                select, .badge, .conducteur-score, .btn, button {
+                    display: none !important;
+                }
+                /* Afficher le texte du conducteur sélectionné */
+                .conducteur-cell span {
+                    display: block;
+                }
+                .print-footer {
+                    margin-top: 20px;
+                    text-align: center;
+                    font-size: 10px;
+                    color: #999;
+                    border-top: 1px solid #ddd;
+                    padding-top: 10px;
+                }
+                @media print {
+                    body { padding: 0; }
+                    .no-print { display: none; }
+                    /* Forcer l'affichage des bordures à l'impression */
+                    table, th, td {
+                        border: 1px solid #000 !important;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="print-header">
+                <h1>Planning Conducteurs</h1>
+                <p><strong>${semaineText}</strong></p>
+                <p>${periodeText}</p>
+            </div>
+            ${planningClone.innerHTML}
+            <div class="print-footer">
+                <p>Document généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}</p>
+            </div>
+        </body>
+        </html>
+    `;
+    
+    // Ouvrir une nouvelle fenêtre pour l'impression
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+    if (!printWindow) {
+        showToast('Erreur', 'Impossible d\'ouvrir la fenêtre d\'impression. Vérifiez les popups bloqués.', 'danger');
+        return;
+    }
+    
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+    
+    // Attendre que le contenu soit chargé puis lancer l'impression
+    printWindow.onload = function() {
+        printWindow.focus();
+        setTimeout(() => {
+            printWindow.print();
+            // Fermer la fenêtre après impression (optionnel)
+            // printWindow.close();
+        }, 250);
+    };
 }
 
 // ==================== EXPORT RGPD ====================
