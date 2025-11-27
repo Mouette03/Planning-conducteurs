@@ -1020,7 +1020,13 @@ function renderPlanning(data, debut, fin) {
             }
         }
         
-        html += `<tr><td><small class="text-muted">${t.type_tournee || ''}</small><br><strong>${t.nom}</strong><br><small class="text-muted duree-tournee">${t.duree || 'non défini'}</small></td>`;
+        html += `<tr><td class="tournee-cell">
+            <div class="d-flex justify-content-between align-items-center">
+                <small class="text-muted">${t.type_tournee || ''}</small>
+                <small class="text-muted duree-tournee">${t.duree || 'non défini'}</small>
+            </div>
+            <div class="text-center"><strong>${t.nom}</strong>${logoTournee}</div>
+        </td>`;
         dates.forEach(d => {
             const dateStr = d.toISOString().split('T')[0];
             html += `<td class="p-1">`;
@@ -1034,7 +1040,7 @@ function renderPlanning(data, debut, fin) {
                 // Matin et après-midi : DEUX cases séparées (2 tours)
                 const attrMatin = data.find(x => x.date === dateStr && x.periode === 'matin' && x.tournee_id == t.id);
                 html += createCellContent(t, attrMatin, dateStr, 'matin');
-                html += '<div style="height: 3px;"></div>'; // Séparateur
+                html += '<div style="height: 6px; background-color: white;"></div>'; // Séparateur
                 const attrAM = data.find(x => x.date === dateStr && x.periode === 'apres-midi' && x.tournee_id == t.id);
                 html += createCellContent(t, attrAM, dateStr, 'apres-midi');
             } else if (t.duree === 'matin') {
@@ -1049,7 +1055,7 @@ function renderPlanning(data, debut, fin) {
                 // CAS PAR DÉFAUT : si duree est null/vide ou inconnue, afficher matin + après-midi
                 const attrMatin = data.find(x => x.date === dateStr && x.periode === 'matin' && x.tournee_id == t.id);
                 html += createCellContent(t, attrMatin, dateStr, 'matin');
-                html += '<div style="height: 3px;"></div>'; // Séparateur
+                html += '<div style="height: 6px; background-color: white;"></div>'; // Séparateur
                 const attrAM = data.find(x => x.date === dateStr && x.periode === 'apres-midi' && x.tournee_id == t.id);
                 html += createCellContent(t, attrAM, dateStr, 'apres-midi');
             }
@@ -1142,12 +1148,12 @@ function createCellContent(tournee, attr, date, periode) {
         periodeData = 'matin'; // une journée s'enregistre comme 'matin' en base
     }
     
-    return `<div class="p-1 rounded ${cellClass} planning-cell">
+    return `<div class="${cellClass} planning-cell">
         <small class="text-muted d-block" style="font-size: 0.7rem; line-height: 1;">${periodeLabel}</small>
         <select class="form-select form-select-sm mb-1" onchange="sauvegarderAttribution(this)" 
                 data-date="${date}" data-periode="${periodeData}" data-tournee="${tournee.id}" 
                 data-old-value="${attr?.conducteur_id || ''}" 
-                style="font-size: 0.75rem; padding: 0.2rem 0.4rem;">
+                style="font-size: 0.85rem; padding: 0.2rem 0.4rem; font-weight: 600; color: #212529;">
             <option value="">-- Libre --</option>
             ${AppState.conducteurs.map(c => `<option value="${c.id}" ${c.id == attr?.conducteur_id ? 'selected' : ''}>
                 ${c.prenom.charAt(0)}. ${c.nom}

@@ -47,9 +47,9 @@
     min-width: 100%;
 }
 .planning-table th, .planning-table td {
-    border: 1px solid #dee2e6;
-    padding: 0.25rem;
-    vertical-align: top;
+    border: 2px solid #6c757d;
+    padding: 0.5rem;
+    vertical-align: middle;
     min-width: 150px;
 }
 
@@ -74,7 +74,7 @@
     position: sticky;
     top: 0;
     z-index: 10;
-    border: 1px solid #003d9e;
+    border: 2px solid #003d9e;
 }
 .planning-table td:first-child,
 .planning-table th:first-child {
@@ -134,12 +134,29 @@
 /* Style pour les cellules du planning */
 .planning-cell {
     transition: all 0.2s ease;
-    min-height: 85px;
     display: flex;
     flex-direction: column;
+    min-height: 100%;
+    padding: 0.5rem;
+    border-radius: 0;
 }
 .planning-cell:hover {
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Colonne tournée compacte */
+.tournee-cell {
+    padding: 0.5rem !important;
+    line-height: 1.2;
+}
+.tournee-cell .d-flex {
+    margin-bottom: 0.25rem;
+}
+.tournee-cell small {
+    font-size: 0.75rem;
+}
+.tournee-cell strong {
+    font-size: 1.1rem;
 }
 
 /* Modals */
